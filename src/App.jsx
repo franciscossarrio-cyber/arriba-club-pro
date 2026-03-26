@@ -80,10 +80,13 @@ function App() {
   const cargarDatos = useCallback(async () => {
     try {
       setLoading(true);
-      const [alumnosRes, pagosRes, asistRes] = await Promise.all([
+      const [alumnosRes, pagosRes, asistRes, profesRes, preciosRes, clasesProfeRes] = await Promise.all([
         apiGet('getAlumnos'),
         apiGet('getPagos', { mes: mesActual }),
-        apiGet('getAsistencias', { mes: mesActual })
+        apiGet('getAsistencias', { mes: mesActual }),
+        apiGet('getProfesores').catch(() => null),
+        apiGet('getPrecios').catch(() => null),
+        apiGet('getClasesProfe', { mes: mesActual }).catch(() => null)
       ]);
 
       if (alumnosRes.success) {
@@ -104,6 +107,18 @@ function App() {
           }
         });
         setAsistencias(asistPorAlumno);
+      }
+      if (profesRes?.success) {
+        setProfesores(profesRes.profesores);
+        storage.set('profesores', profesRes.profesores);
+      }
+      if (preciosRes?.success) {
+        setPrecios(preciosRes.precios);
+        storage.set('precios', preciosRes.precios);
+      }
+      if (clasesProfeRes?.success) {
+        setClasesPorProfe(clasesProfeRes.clases);
+        storage.set('clases_profe', clasesProfeRes.clases);
       }
     } catch (err) {
       setError('Error de conexión');
@@ -181,7 +196,7 @@ function App() {
   const handleGuardarAlumno = async (nuevoAlumno) => {
     setSyncing(true);
     try {
-      const res = await apiPost('addAlumno', { ...nuevoAlumno, disciplina: disciplinaActiva });
+      const res = await apiPost('addAlumno', { alumno: { ...nuevoAlumno, disciplina: disciplinaActiva } });
       if (res.success) await cargarDatos();
     } catch (err) {
       setError('Error al guardar');
@@ -190,26 +205,61 @@ function App() {
     }
   };
 
-  const handleGuardarProfe = (nuevoProfe) => {
-    setProfesores(prev => [...prev, {
-      id: `PR${String(prev.length + 1).padStart(3, '0')}`,
-      nombre: nuevoProfe.nombre,
-      cbu: nuevoProfe.cbu,
-      estado: 'Activo'
-    }]);
-  };
-
-  const handleEliminarProfe = (profeId) => {
-    if (confirm('¿Eliminar profesor?')) {
-      setProfesores(prev => prev.filter(p => p.id !== profeId));
+  const handleEditarAlumno = async (alumno) => {
+    setSyncing(true);
+    try {
+      const res = await apiPost('updateAlumno', { alumno });
+      if (res.success) await cargarDatos();
+      else setError('Error al editar alumno');
+    } catch (err) {
+      setError('Error al editar alumno');
+    } finally {
+      setSyncing(false);
     }
   };
 
-  const handleAsignarClase = (fecha, horario, profeId) => {
-    setClasesPorProfe(prev => ({
-      ...prev,
-      [`${disciplinaActiva}-${fecha}-${horario}`]: profeId
-    }));
+  const handleGuardarProfe = async (nuevoProfe) => {
+    setSyncing(true);
+    try {
+      const res = await apiPost('addProfesor', { profe: { nombre: nuevoProfe.nombre, cbu: nuevoProfe.cbu } });
+      if (res.success) {
+        await cargarDatos();
+      } else {
+        setError('Error al guardar profesor');
+      }
+    } catch (err) {
+      setError('Error al guardar profesor');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleEliminarProfe = async (profeId) => {
+    if (confirm('¿Eliminar profesor?')) {
+      setSyncing(true);
+      try {
+        const res = await apiPost('eliminarProfesor', { profeId });
+        if (res.success) {
+          await cargarDatos();
+        } else {
+          setError('Error al eliminar profesor');
+        }
+      } catch (err) {
+        setError('Error al eliminar profesor');
+      } finally {
+        setSyncing(false);
+      }
+    }
+  };
+
+  const handleAsignarClase = async (fecha, horario, profeId) => {
+    const key = `${disciplinaActiva}-${fecha}-${horario}`;
+    setClasesPorProfe(prev => ({ ...prev, [key]: profeId }));
+    try {
+      await apiPost('asignarClase', { key, profeId, disciplina: disciplinaActiva, fecha, horario });
+    } catch (err) {
+      setError('Error al asignar clase');
+    }
   };
 
   const handleToggleAsistencia = async (alumnoId, fecha) => {
@@ -342,16 +392,21 @@ function App() {
   };
 
   const handleUpdatePrecios = (disciplina, plan, frecuencia, valor) => {
-    setPrecios(prev => ({
-      ...prev,
-      [disciplina]: {
-        ...prev[disciplina],
-        [plan]: {
-          ...prev[disciplina]?.[plan],
-          [frecuencia]: valor
+    setPrecios(prev => {
+      const nuevo = {
+        ...prev,
+        [disciplina]: {
+          ...prev[disciplina],
+          [plan]: {
+            ...prev[disciplina]?.[plan],
+            [frecuencia]: valor
+          }
         }
-      }
-    }));
+      };
+      apiPost('updatePrecio', { disciplina, plan, frecuencia, valor })
+        .catch(() => setError('Error al guardar precio'));
+      return nuevo;
+    });
   };
 
   // Render Login
@@ -451,6 +506,7 @@ function App() {
               horarioFiltro={horarioFiltro}
               setHorarioFiltro={setHorarioFiltro}
               onGuardarAlumno={handleGuardarAlumno}
+              onEditarAlumno={handleEditarAlumno}
               syncing={syncing}
             />
           )}

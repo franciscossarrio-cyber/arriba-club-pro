@@ -2,6 +2,8 @@ import { useState } from 'react';
 import Icon from './Icon';
 import { HORARIOS } from '../utils/helpers';
 
+const ALUMNO_VACIO = { nombre: '', telefono: '', plan: 'Arena Basic', frecuencia: '2x sem', horario: '18:00' };
+
 const Alumnos = ({
   disciplinaActiva,
   alumnosFiltrados,
@@ -10,23 +12,46 @@ const Alumnos = ({
   horarioFiltro,
   setHorarioFiltro,
   onGuardarAlumno,
+  onEditarAlumno,
   syncing
 }) => {
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [nuevoAlumno, setNuevoAlumno] = useState({
-    nombre: '',
-    telefono: '',
-    plan: 'Arena Basic',
-    frecuencia: '2x sem',
-    horario: '18:00'
-  });
+  const [alumnoEditando, setAlumnoEditando] = useState(null);
+  const [form, setForm] = useState(ALUMNO_VACIO);
+
+  const abrirNuevo = () => {
+    setAlumnoEditando(null);
+    setForm(ALUMNO_VACIO);
+    setMostrarForm(true);
+  };
+
+  const abrirEditar = (alumno) => {
+    setAlumnoEditando(alumno);
+    setForm({
+      nombre: alumno.nombre || '',
+      telefono: alumno.telefono || '',
+      plan: alumno.plan || 'Arena Basic',
+      frecuencia: alumno.frecuencia || '2x sem',
+      horario: alumno.horario || '18:00',
+      estado: alumno.estado || 'Activo'
+    });
+    setMostrarForm(true);
+  };
+
+  const cerrarForm = () => {
+    setMostrarForm(false);
+    setAlumnoEditando(null);
+    setForm(ALUMNO_VACIO);
+  };
 
   const handleGuardar = async () => {
-    if (nuevoAlumno.nombre) {
-      await onGuardarAlumno(nuevoAlumno);
-      setMostrarForm(false);
-      setNuevoAlumno({ nombre: '', telefono: '', plan: 'Arena Basic', frecuencia: '2x sem', horario: '18:00' });
+    if (!form.nombre) return;
+    if (alumnoEditando) {
+      await onEditarAlumno({ ...alumnoEditando, ...form });
+    } else {
+      await onGuardarAlumno(form);
     }
+    cerrarForm();
   };
 
   return (
@@ -37,7 +62,7 @@ const Alumnos = ({
           <p className="text-on-surface-variant">{alumnosFiltrados.length} alumnos en {disciplinaActiva}</p>
         </div>
         <button
-          onClick={() => setMostrarForm(true)}
+          onClick={abrirNuevo}
           className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:shadow-xl transition-all active:scale-95"
         >
           <Icon name="person_add" size={20} />
@@ -76,9 +101,17 @@ const Alumnos = ({
                 <h3 className="font-bold text-on-surface">{alumno.nombre}</h3>
                 {alumno.apodos?.length > 0 && <p className="text-sm text-on-surface-variant">"{alumno.apodos[0]}"</p>}
               </div>
-              <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full ${alumno.estado === 'Activo' ? 'bg-success/10 text-success' : 'bg-outline/10 text-outline'}`}>
-                {alumno.estado}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full ${alumno.estado === 'Activo' ? 'bg-success/10 text-success' : 'bg-outline/10 text-outline'}`}>
+                  {alumno.estado}
+                </span>
+                <button
+                  onClick={() => abrirEditar(alumno)}
+                  className="p-1.5 hover:bg-primary/10 rounded-lg text-primary transition-colors"
+                >
+                  <Icon name="edit" size={16} />
+                </button>
+              </div>
             </div>
             <div className="space-y-3">
               {alumno.telefono && (
@@ -102,29 +135,31 @@ const Alumnos = ({
         ))}
       </div>
 
-      {/* New Student Modal */}
+      {/* New / Edit Student Modal */}
       {mostrarForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarForm(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={cerrarForm}>
           <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-on-surface mb-6">Nuevo Alumno</h3>
+            <h3 className="text-xl font-bold text-on-surface mb-6">
+              {alumnoEditando ? 'Editar Alumno' : 'Nuevo Alumno'}
+            </h3>
             <div className="space-y-4">
               <input
                 type="text"
-                value={nuevoAlumno.nombre}
-                onChange={(e) => setNuevoAlumno({ ...nuevoAlumno, nombre: e.target.value })}
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                 placeholder="Nombre completo"
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
               />
               <input
                 type="tel"
-                value={nuevoAlumno.telefono}
-                onChange={(e) => setNuevoAlumno({ ...nuevoAlumno, telefono: e.target.value })}
+                value={form.telefono}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
                 placeholder="Teléfono"
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
               />
               <select
-                value={nuevoAlumno.plan}
-                onChange={(e) => setNuevoAlumno({ ...nuevoAlumno, plan: e.target.value })}
+                value={form.plan}
+                onChange={(e) => setForm({ ...form, plan: e.target.value })}
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
                 <option>Arena Basic</option>
@@ -132,23 +167,34 @@ const Alumnos = ({
                 <option>Arena Premium</option>
               </select>
               <select
-                value={nuevoAlumno.frecuencia}
-                onChange={(e) => setNuevoAlumno({ ...nuevoAlumno, frecuencia: e.target.value })}
+                value={form.frecuencia}
+                onChange={(e) => setForm({ ...form, frecuencia: e.target.value })}
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
                 <option value="1x sem">1x semana</option>
                 <option value="2x sem">2x semana</option>
+                <option value="3x sem">3x semana</option>
               </select>
               <select
-                value={nuevoAlumno.horario}
-                onChange={(e) => setNuevoAlumno({ ...nuevoAlumno, horario: e.target.value })}
+                value={form.horario}
+                onChange={(e) => setForm({ ...form, horario: e.target.value })}
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
                 {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
               </select>
+              {alumnoEditando && (
+                <select
+                  value={form.estado}
+                  onChange={(e) => setForm({ ...form, estado: e.target.value })}
+                  className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
+                >
+                  <option value="Activo">Activo</option>
+                  <option value="Inactivo">Inactivo</option>
+                </select>
+              )}
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setMostrarForm(false)} className="flex-1 py-3 bg-surface-container-high rounded-xl font-medium text-on-surface-variant">
+              <button onClick={cerrarForm} className="flex-1 py-3 bg-surface-container-high rounded-xl font-medium text-on-surface-variant">
                 Cancelar
               </button>
               <button onClick={handleGuardar} disabled={syncing} className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold">
