@@ -4,18 +4,55 @@
  */
 
 const Futvoley = ({ size }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-    {/* Pelota de fútbol / futvoley */}
-    <circle cx="20" cy="20" r="17" fill="#1c1c2e" />
-    {/* Pentágono central */}
-    <polygon points="20,9 27,14.5 24.5,22.5 15.5,22.5 13,14.5" fill="white" />
-    {/* Líneas a los hexágonos del borde */}
-    <line x1="20"   y1="9"    x2="20"   y2="3.5"  stroke="white" strokeWidth="1.4"/>
-    <line x1="27"   y1="14.5" x2="32"   y2="11"   stroke="white" strokeWidth="1.4"/>
-    <line x1="24.5" y1="22.5" x2="28"   y2="27"   stroke="white" strokeWidth="1.4"/>
-    <line x1="15.5" y1="22.5" x2="12"   y2="27"   stroke="white" strokeWidth="1.4"/>
-    <line x1="13"   y1="14.5" x2="8"    y2="11"   stroke="white" strokeWidth="1.4"/>
-    <circle cx="20" cy="20" r="17" stroke="#111" strokeWidth="1.2"/>
+  /* Pelota Mikasa VLS300 — azul/amarillo, paneles curvos característicos */
+  <svg width={size} height={size} viewBox="0 0 40 40">
+    <defs>
+      <clipPath id="mikasa-clip">
+        <circle cx="20" cy="20" r="17"/>
+      </clipPath>
+      <radialGradient id="mikasa-grad" cx="38%" cy="35%" r="60%">
+        <stop offset="0%" stopColor="#1E88E5"/>
+        <stop offset="100%" stopColor="#0D47A1"/>
+      </radialGradient>
+    </defs>
+
+    {/* Sombra suave */}
+    <circle cx="21" cy="21.5" r="16.5" fill="rgba(0,0,0,0.18)"/>
+
+    {/* Base azul con gradiente */}
+    <circle cx="20" cy="20" r="17" fill="url(#mikasa-grad)"/>
+
+    {/* Paneles amarillos Mikasa — clipeados al círculo */}
+    <g clipPath="url(#mikasa-clip)">
+      {/* Panel superior-izquierdo */}
+      <path
+        d="M2,14 C5,5 13,0 22,1 C30,2 37,8 38,17 C31,13 23,13 17,17 C11,21 8,28 10,35 C5,30 1,23 2,14Z"
+        fill="#FFB300"
+      />
+      {/* Panel inferior-derecho */}
+      <path
+        d="M30,28 C28,34 23,38 18,39 C13,40 8,37 5,33 C9,35 15,35 20,32 C25,29 28,23 30,28Z"
+        fill="#FFB300"
+      />
+    </g>
+
+    {/* Costuras blancas */}
+    <g clipPath="url(#mikasa-clip)" fill="none" stroke="white" strokeLinecap="round">
+      {/* Costura superior del panel */}
+      <path d="M2,14 C5,5 13,0 22,1 C30,2 37,8 38,17" strokeWidth="1.4"/>
+      {/* Costura inferior del panel */}
+      <path d="M10,35 C8,28 11,21 17,17 C23,13 31,13 38,17" strokeWidth="1.4"/>
+      {/* Cola inferior */}
+      <path d="M10,35 C11,37 14,39 18,39" strokeWidth="1.4"/>
+      {/* Costura derecha */}
+      <path d="M30,28 C32,23 32,17 29,13" strokeWidth="1" opacity="0.6"/>
+    </g>
+
+    {/* Contorno */}
+    <circle cx="20" cy="20" r="17" fill="none" stroke="#0D47A1" strokeWidth="1"/>
+
+    {/* Reflejo de luz */}
+    <ellipse cx="13" cy="12" rx="5" ry="3" fill="white" opacity="0.2" transform="rotate(-35 13 12)"/>
   </svg>
 );
 
