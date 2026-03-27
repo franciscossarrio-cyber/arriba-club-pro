@@ -130,9 +130,12 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, onClick }) => {
       </div>
       {/* Footer */}
       <div className="flex items-center justify-between">
-        <span className={`text-[9px] font-bold uppercase ${styles.text} opacity-70`}>
-          {slot?.disciplina ? slot.disciplina.split(' ')[0] : styles.label}
-        </span>
+        <div className="flex items-center gap-1">
+          {slot?.disciplina && <DisciplinaIcon disciplina={slot.disciplina} size={14} />}
+          <span className={`text-[9px] font-bold uppercase ${styles.text} opacity-70`}>
+            {slot?.disciplina ? slot.disciplina.split(' ')[0] : styles.label}
+          </span>
+        </div>
         <span className={`text-[10px] font-black ${ids.length >= 8 ? 'text-error' : styles.text}`}>
           {ids.length}/8
         </span>
