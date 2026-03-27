@@ -3,12 +3,7 @@ import Icon from './Icon';
 import { HORARIOS } from '../utils/helpers';
 
 const CUPO_MAX = 8;
-
 const DIAS_NOMBRE = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-
-function fechaCorta(fechaCompleta) {
-  return fechaCompleta ? fechaCompleta.substring(0, 5) : '';
-}
 
 function diaNombre(fecha, anio) {
   const [dd, mm] = fecha.split('/').map(Number);
@@ -18,40 +13,49 @@ function diaNombre(fecha, anio) {
 const Clases = ({
   disciplinaActiva,
   mesActual,
+  mesNum,
   anio,
-  ocupacion,       // array de docs de ocupacion_cancha
-  alumnos,         // lista completa de alumnos (para nombre lookup)
+  ocupacion,
+  alumnos,
   alumnosDisciplina,
-  asistencias,     // { alumnoId: { 'dd/mm': estado } }
+  asistencias,
   profesores,
   clasesPorProfe,
   onRegistrarAsistencia,
   onProcesarLista,
+  onLlenarMes,
   syncing,
 }) => {
-  const [horarioActivo, setHorarioActivo] = useState(HORARIOS[1]); // 18:00 default
+  const [horarioActivo, setHorarioActivo] = useState(HORARIOS[1]);
   const [fechaSeleccionada, setFechaSeleccionada] = useState('');
   const [mostrarCargaLista, setMostrarCargaLista] = useState(false);
   const [inputLista, setInputLista] = useState('');
   const [fechaLista, setFechaLista] = useState('');
   const [resultadoLista, setResultadoLista] = useState(null);
 
-  // Fechas que tienen slots en cancha3 para el horario activo
-  const fechasOcupadas = useMemo(() => {
-    const set = new Set(
-      ocupacion
-        .filter(s => s.canchaId === 'cancha3' && s.horario === horarioActivo)
-        .map(s => s.fecha)
+  // Todas las fechas del mes donde algún alumno tiene clase en horarioActivo
+  const fechasDelHorario = useMemo(() => {
+    const alumnosHorario = alumnosDisciplina.filter(
+      a => a.estado === 'Activo' && a.horario === horarioActivo && a.diasElegidos?.length > 0
     );
-    return [...set].sort((a, b) => {
-      const [dA, mA] = a.split('/').map(Number);
-      const [dB, mB] = b.split('/').map(Number);
-      return mA !== mB ? mA - mB : dA - dB;
-    });
-  }, [ocupacion, horarioActivo]);
+    const diasActivos = new Set(alumnosHorario.flatMap(a => a.diasElegidos));
+    if (diasActivos.size === 0) return [];
 
-  // Slot actual (cancha3 + fecha + horario)
-  const slotActual = useMemo(() => {
+    const fechas = [];
+    const ultimoDia = new Date(anio, mesNum, 0).getDate();
+    for (let d = 1; d <= ultimoDia; d++) {
+      const fecha = new Date(anio, mesNum - 1, d);
+      if (diasActivos.has(fecha.getDay())) {
+        const dia = String(d).padStart(2, '0');
+        const mes = String(mesNum).padStart(2, '0');
+        fechas.push(`${dia}/${mes}`);
+      }
+    }
+    return fechas;
+  }, [alumnosDisciplina, horarioActivo, anio, mesNum]);
+
+  // Slot de Firestore para la fecha/horario seleccionados (puede no existir aún)
+  const slotFirestore = useMemo(() => {
     if (!fechaSeleccionada) return null;
     return ocupacion.find(
       s => s.canchaId === 'cancha3' &&
@@ -60,16 +64,29 @@ const Clases = ({
     ) || null;
   }, [ocupacion, fechaSeleccionada, horarioActivo]);
 
-  const alumnosEnSlot = slotActual?.alumnos || [];
+  // Alumnos del slot: usa Firestore si hay datos, sino deriva de diasElegidos
+  const alumnosEnSlot = useMemo(() => {
+    if (!fechaSeleccionada) return [];
+    if (slotFirestore?.alumnos?.length > 0) return slotFirestore.alumnos;
 
-  // Cupos: los que marcaron cambio_turno liberan un cupo para ese día
+    // Fallback: alumnos activos con horario+día coincidente
+    const [dd, mm] = fechaSeleccionada.split('/').map(Number);
+    const diaSemana = new Date(anio, mm - 1, dd).getDay();
+    return alumnosDisciplina
+      .filter(a =>
+        a.estado === 'Activo' &&
+        a.horario === horarioActivo &&
+        a.diasElegidos?.includes(diaSemana)
+      )
+      .map(a => a.id);
+  }, [slotFirestore, fechaSeleccionada, alumnosDisciplina, horarioActivo, anio]);
+
   const cambiosTurno = alumnosEnSlot.filter(
     id => asistencias[id]?.[fechaSeleccionada] === 'cambio_turno'
   ).length;
   const cuposOcupados = alumnosEnSlot.length - cambiosTurno;
   const cuposLibres = CUPO_MAX - cuposOcupados;
 
-  // Profe asignado
   const profeId = clasesPorProfe[`${disciplinaActiva}-${fechaSeleccionada}-${horarioActivo}`];
   const profe = profesores.find(p => p.id === profeId);
 
@@ -85,7 +102,6 @@ const Clases = ({
   };
 
   const toggleAsistencia = (alumnoId, estadoActual, nuevoEstado) => {
-    // Si ya tiene ese estado, lo borra (toggle off)
     onRegistrarAsistencia(
       alumnoId,
       fechaSeleccionada,
@@ -93,6 +109,10 @@ const Clases = ({
       estadoActual === nuevoEstado ? null : nuevoEstado
     );
   };
+
+  const slotsEnFirestore = ocupacion.filter(
+    s => s.canchaId === 'cancha3' && s.horario === horarioActivo
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -102,14 +122,34 @@ const Clases = ({
           <h1 className="text-2xl font-black text-on-surface tracking-tight">Clases</h1>
           <p className="text-on-surface-variant">{disciplinaActiva} · Cancha 3 · {mesActual}</p>
         </div>
-        <button
-          onClick={() => setMostrarCargaLista(!mostrarCargaLista)}
-          className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all ${mostrarCargaLista ? 'bg-primary text-white' : 'bg-surface-container-lowest text-primary'}`}
-        >
-          <Icon name="content_paste" size={18} />
-          Carga Rápida
-        </button>
+        <div className="flex gap-2">
+          {/* Llenar mes */}
+          <button
+            onClick={onLlenarMes}
+            disabled={syncing}
+            title="Carga todos los cupos del mes para los alumnos con días asignados"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm bg-primary/10 text-primary hover:bg-primary/20 transition-all disabled:opacity-50"
+          >
+            <Icon name="calendar_add_on" size={18} />
+            Llenar mes
+          </button>
+          <button
+            onClick={() => setMostrarCargaLista(!mostrarCargaLista)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm transition-all ${mostrarCargaLista ? 'bg-primary text-white' : 'bg-surface-container-lowest text-primary'}`}
+          >
+            <Icon name="content_paste" size={18} />
+            Carga rápida
+          </button>
+        </div>
       </div>
+
+      {/* Aviso si no hay slots en Firestore */}
+      {slotsEnFirestore === 0 && fechasDelHorario.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3 text-amber-700 text-sm">
+          <Icon name="info" size={18} className="shrink-0" />
+          <span>Los cupos aún no están guardados en la base de datos. Tocá <strong>Llenar mes</strong> para cargarlos, o registrá un pago de membresía.</span>
+        </div>
+      )}
 
       {/* Carga Rápida */}
       {mostrarCargaLista && (
@@ -127,7 +167,7 @@ const Clases = ({
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
                 <option value="">Seleccionar fecha</option>
-                {fechasOcupadas.map(f => (
+                {fechasDelHorario.map(f => (
                   <option key={f} value={f}>{diaNombre(f, anio)} {f}</option>
                 ))}
               </select>
@@ -146,7 +186,7 @@ const Clases = ({
           <textarea
             value={inputLista}
             onChange={(e) => setInputLista(e.target.value)}
-            placeholder="Pegá la lista de nombres acá (uno por línea)"
+            placeholder="Pegá la lista de nombres (uno por línea)"
             className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary min-h-[100px] resize-none"
           />
           <button
@@ -185,9 +225,9 @@ const Clases = ({
       </div>
 
       {/* Selector de fechas */}
-      {fechasOcupadas.length > 0 ? (
+      {fechasDelHorario.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {fechasOcupadas.map(fecha => (
+          {fechasDelHorario.map(fecha => (
             <button
               key={fecha}
               onClick={() => setFechaSeleccionada(fecha)}
@@ -205,28 +245,26 @@ const Clases = ({
       ) : (
         <div className="bg-surface-container-lowest rounded-2xl p-6 text-center text-on-surface-variant">
           <Icon name="event_busy" size={32} className="mx-auto mb-2 opacity-40" />
-          <p className="font-medium">Sin clases cargadas para las {horarioActivo}</p>
-          <p className="text-sm mt-1 opacity-70">Los cupos se llenan automáticamente al registrar un pago de membresía</p>
+          <p className="font-medium">Sin alumnos con días asignados para las {horarioActivo}</p>
+          <p className="text-sm mt-1 opacity-70">Asigná días a los alumnos desde la sección Alumnos</p>
         </div>
       )}
 
-      {/* Slot de cancha */}
+      {/* Slot */}
       {fechaSeleccionada && (
         <div className="space-y-4 fade-in">
           {/* Info del slot */}
           <div className="bg-surface-container-lowest rounded-2xl p-4 flex items-center justify-between">
             <div>
               <p className="font-black text-on-surface text-lg">
-                Cancha 3 · {diaNombre(fechaSeleccionada, anio)} {fechaSeleccionada} · {horarioActivo}
+                {diaNombre(fechaSeleccionada, anio)} {fechaSeleccionada} · {horarioActivo}
               </p>
-              {profe && (
-                <p className="text-sm text-on-surface-variant mt-0.5">
-                  <Icon name="person" size={14} className="inline mr-1" />
-                  {profe.nombre}
-                </p>
-              )}
+              <p className="text-xs text-on-surface-variant mt-0.5">
+                Cancha 3
+                {profe && <span> · {profe.nombre}</span>}
+                {!slotFirestore && <span className="text-amber-500"> · pendiente de guardar</span>}
+              </p>
             </div>
-            {/* Cupo */}
             <div className={`flex flex-col items-center px-4 py-2 rounded-xl ${
               cuposLibres === 0 ? 'bg-error/10 text-error' :
               cuposLibres <= 2 ? 'bg-amber-500/10 text-amber-600' :
@@ -242,10 +280,10 @@ const Clases = ({
             </div>
           </div>
 
-          {/* Lista de alumnos del slot */}
+          {/* Lista de alumnos */}
           {alumnosEnSlot.length === 0 ? (
             <div className="bg-surface-container-lowest rounded-2xl p-6 text-center text-on-surface-variant">
-              <p className="font-medium">No hay alumnos en este turno</p>
+              <p>No hay alumnos en este turno</p>
             </div>
           ) : (
             <div className="bg-surface-container-lowest rounded-3xl overflow-hidden">
@@ -255,15 +293,18 @@ const Clases = ({
                   const estado = asistencias[alumnoId]?.[fechaSeleccionada];
 
                   return (
-                    <div key={alumnoId} className={`flex items-center justify-between p-4 transition-colors ${
-                      estado === 'cambio_turno' ? 'bg-amber-50/50' : 'hover:bg-surface-container-low'
-                    }`}>
+                    <div
+                      key={alumnoId}
+                      className={`flex items-center justify-between p-4 transition-colors ${
+                        estado === 'cambio_turno' ? 'bg-amber-50/50' : 'hover:bg-surface-container-low'
+                      }`}
+                    >
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                          estado === 'asistio' ? 'bg-success/20 text-success' :
-                          estado === 'falto' ? 'bg-error/20 text-error' :
-                          estado === 'cambio_turno' ? 'bg-amber-500/20 text-amber-600' :
-                          'bg-primary/10 text-primary'
+                          estado === 'asistio'     ? 'bg-success/20 text-success' :
+                          estado === 'falto'       ? 'bg-error/20 text-error' :
+                          estado === 'cambio_turno'? 'bg-amber-500/20 text-amber-600' :
+                                                    'bg-primary/10 text-primary'
                         }`}>
                           {alumno?.nombre?.charAt(0) || '?'}
                         </div>
@@ -273,9 +314,7 @@ const Clases = ({
                         </div>
                       </div>
 
-                      {/* Botones de estado */}
                       <div className="flex gap-2">
-                        {/* Fue */}
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'asistio')}
                           disabled={syncing}
@@ -288,7 +327,6 @@ const Clases = ({
                         >
                           <Icon name="check" size={20} />
                         </button>
-                        {/* Faltó */}
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'falto')}
                           disabled={syncing}
@@ -301,7 +339,6 @@ const Clases = ({
                         >
                           <Icon name="close" size={20} />
                         </button>
-                        {/* Cambio de turno */}
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'cambio_turno')}
                           disabled={syncing}
@@ -322,11 +359,10 @@ const Clases = ({
             </div>
           )}
 
-          {/* Leyenda */}
           <div className="flex gap-4 text-xs text-on-surface-variant px-1">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-success inline-block"></span>Fue</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-error inline-block"></span>Faltó</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>Cambio de turno</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-success inline-block"></span>Fue</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-error inline-block"></span>Faltó</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>Cambio de turno</span>
           </div>
         </div>
       )}

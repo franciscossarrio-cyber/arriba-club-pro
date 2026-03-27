@@ -420,6 +420,30 @@ function App() {
     }
   };
 
+  // Llena los cupos del mes para TODOS los alumnos activos con diasElegidos
+  const handleLlenarMes = async () => {
+    const activos = alumnosDisciplina.filter(
+      a => a.estado === 'Activo' && a.diasElegidos?.length > 0 && a.horario
+    );
+    if (activos.length === 0) {
+      setError('Ningún alumno tiene días asignados aún');
+      return;
+    }
+    setSyncing(true);
+    try {
+      await Promise.all(
+        activos.map(a =>
+          llenarCuposMembresia(a.id, a.diasElegidos, a.horario, mesNum, anio, disciplinaActiva)
+        )
+      );
+      await cargarDatos();
+    } catch (err) {
+      setError('Error al llenar mes');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleUpdatePrecios = (disciplina, plan, frecuencia, valor) => {
     setPrecios(prev => ({
       ...prev,
@@ -526,6 +550,7 @@ function App() {
             <Clases
               disciplinaActiva={disciplinaActiva}
               mesActual={mesActual}
+              mesNum={mesNum}
               anio={anio}
               ocupacion={ocupacion}
               alumnos={alumnos}
@@ -535,6 +560,7 @@ function App() {
               clasesPorProfe={clasesPorProfe}
               onRegistrarAsistencia={handleRegistrarAsistencia}
               onProcesarLista={handleProcesarLista}
+              onLlenarMes={handleLlenarMes}
               syncing={syncing}
             />
           )}
