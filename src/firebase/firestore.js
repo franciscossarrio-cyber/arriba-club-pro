@@ -222,9 +222,10 @@ export async function updateAsistencia(id, data) {
 
 // ─── OCUPACION CANCHA ────────────────────────────────────────────────────────
 
-/** ID de slot: "{canchaId}-{fecha}-{horario}" (ej: "cancha3-15/03-18:00") */
+/** ID de slot: "{canchaId}-{fecha}-{horario}" (ej: "cancha3-15_03-18:00")
+ *  La fecha usa _ en vez de / porque Firestore trata / como separador de ruta. */
 const slotId = (canchaId, fecha, horario) =>
-  `${canchaId}-${fecha}-${horario}`;
+  `${canchaId}-${fecha.replace('/', '_')}-${horario}`;
 
 /**
  * Devuelve el slot de una cancha en una fecha y horario.
@@ -413,9 +414,9 @@ export async function deleteProfesor(id) {
 
 // ─── CLASES PROFE ─────────────────────────────────────────────────────────────
 
-/** ID de clase: "{disciplina}-{fecha}-{horario}" */
+/** ID de clase: "{disciplina}-{fecha}-{horario}" (fecha usa _ en vez de /) */
 const claseId = (disciplina, fecha, horario) =>
-  `${disciplina}-${fecha}-${horario}`;
+  `${disciplina}-${fecha.replace('/', '_')}-${horario}`;
 
 /**
  * Devuelve todas las clases asignadas a profes, opcionalmente por mes.
