@@ -2,6 +2,11 @@
   command = "vite build"
   publish = "dist"
 
+  # Las credenciales de Firebase para web son públicas por diseño.
+  # La seguridad real viene de las reglas de Firestore, no de ocultar estas claves.
+  [build.environment]
+    SECRETS_SCAN_OMIT_KEYS = "VITE_FIREBASE_API_KEY,VITE_FIREBASE_APP_ID,VITE_FIREBASE_AUTH_DOMAIN,VITE_FIREBASE_MESSAGING_SENDER_ID,VITE_FIREBASE_PROJECT_ID,VITE_FIREBASE_STORAGE_BUCKET"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
