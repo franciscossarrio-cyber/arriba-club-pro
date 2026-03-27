@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import Icon from './Icon';
-import { formatMonto, getWhatsAppLink } from '../utils/helpers';
+import { formatMonto, getWhatsAppLink, HORARIOS } from '../utils/helpers';
+
+const PRECIO_SUELTA_DEFAULT = 15000;
 
 const Pagos = ({
   disciplinaActiva,
@@ -11,54 +13,49 @@ const Pagos = ({
   pagosDisciplina,
   alumnos,
   preciosDisciplina,
+  fechasMes,
   onProcesarPago,
+  onProcesarSuelta,
   syncing
 }) => {
+  const [modo, setModo] = useState('membresia'); // 'membresia' | 'suelta'
+
+  // Membresía
   const [inputComando, setInputComando] = useState('');
   const [resultadoComando, setResultadoComando] = useState(null);
 
-  const handleProcesarPago = async () => {
+  // Clase suelta
+  const [sNombre, setSNombre] = useState('');
+  const [sFecha, setSFecha] = useState(fechasMes?.[0] || '');
+  const [sHorario, setSHorario] = useState(HORARIOS[1] || '18:00');
+  const [sMonto, setSMonto] = useState(String(PRECIO_SUELTA_DEFAULT));
+  const [resultadoSuelta, setResultadoSuelta] = useState(null);
+
+  const handleProcesarMembresia = async () => {
     const resultado = await onProcesarPago(inputComando);
     setResultadoComando(resultado);
-    if (resultado.success) {
-      setInputComando('');
-    }
+    if (resultado.success) setInputComando('');
   };
+
+  const handleProcesarClaseSuelta = async () => {
+    if (!sNombre.trim() || !sFecha || !sHorario) {
+      setResultadoSuelta({ success: false, mensaje: 'Completá nombre, fecha y horario' });
+      return;
+    }
+    const resultado = await onProcesarSuelta(sNombre, sFecha, sHorario, parseInt(sMonto) || PRECIO_SUELTA_DEFAULT);
+    setResultadoSuelta(resultado);
+    if (resultado.success) setSNombre('');
+  };
+
+  const pagosPagados = pagosDisciplina.filter(p => p.estado === 'Pagado');
+  const pagosSueltos = pagosPagados.filter(p => p.tipo === 'suelta');
+  const pagosMembresia = pagosPagados.filter(p => p.tipo !== 'suelta');
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-black text-on-surface tracking-tight">Pagos</h1>
         <p className="text-on-surface-variant">{disciplinaActiva} • {mesActual}</p>
-      </div>
-
-      {/* Quick Command */}
-      <div className="bg-surface-container-lowest rounded-2xl p-4">
-        <p className="text-xs text-outline font-bold uppercase mb-2">Registro Rápido</p>
-        <p className="text-xs text-on-surface-variant mb-3">Escribí el nombre o apodo del alumno y presioná Enter</p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={inputComando}
-            onChange={(e) => setInputComando(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleProcesarPago()}
-            placeholder="ej: Juan, Mati, Tina..."
-            className="flex-1 px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary text-on-surface"
-          />
-          <button
-            onClick={handleProcesarPago}
-            disabled={syncing || !inputComando.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold disabled:opacity-50"
-          >
-            {syncing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner" /> : <Icon name="add" size={20} />}
-          </button>
-        </div>
-        {resultadoComando && (
-          <div className={`mt-3 p-3 rounded-xl flex items-center gap-2 ${resultadoComando.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
-            <Icon name={resultadoComando.success ? 'check_circle' : 'error'} size={20} />
-            <span className="font-medium">{resultadoComando.mensaje}</span>
-          </div>
-        )}
       </div>
 
       {/* Stats */}
@@ -73,7 +70,121 @@ const Pagos = ({
         </div>
       </div>
 
-      {/* Pending Payments with WhatsApp */}
+      {/* Registro rápido */}
+      <div className="bg-surface-container-lowest rounded-2xl p-4 space-y-4">
+        {/* Tabs */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setModo('membresia'); setResultadoComando(null); setResultadoSuelta(null); }}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
+              modo === 'membresia'
+                ? 'bg-primary text-white shadow-sm'
+                : 'bg-surface-container-high text-on-surface-variant'
+            }`}
+          >
+            Membresía
+          </button>
+          <button
+            onClick={() => { setModo('suelta'); setResultadoComando(null); setResultadoSuelta(null); }}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
+              modo === 'suelta'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-surface-container-high text-on-surface-variant'
+            }`}
+          >
+            Clase Suelta
+          </button>
+        </div>
+
+        {modo === 'membresia' ? (
+          <>
+            <p className="text-xs text-on-surface-variant">Nombre o apodo del alumno y presioná Enter</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inputComando}
+                onChange={(e) => setInputComando(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleProcesarMembresia()}
+                placeholder="ej: Juan, Mati, Tina..."
+                className="flex-1 px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary text-on-surface"
+              />
+              <button
+                onClick={handleProcesarMembresia}
+                disabled={syncing || !inputComando.trim()}
+                className="px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold disabled:opacity-50"
+              >
+                {syncing
+                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner" />
+                  : <Icon name="add" size={20} />}
+              </button>
+            </div>
+            {resultadoComando && (
+              <div className={`p-3 rounded-xl flex items-center gap-2 ${resultadoComando.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+                <Icon name={resultadoComando.success ? 'check_circle' : 'error'} size={20} />
+                <span className="font-medium">{resultadoComando.mensaje}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-on-surface-variant">Registrá una clase suelta — el alumno se agrega al slot de cancha automáticamente</p>
+            <input
+              type="text"
+              value={sNombre}
+              onChange={(e) => setSNombre(e.target.value)}
+              placeholder="Nombre o apodo del alumno"
+              className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-amber-500 text-on-surface"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={sFecha}
+                onChange={(e) => setSFecha(e.target.value)}
+                className="px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl text-on-surface"
+              >
+                {(fechasMes || []).map(f => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+              <select
+                value={sHorario}
+                onChange={(e) => setSHorario(e.target.value)}
+                className="px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl text-on-surface"
+              >
+                {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-2 items-center">
+              <div className="flex-1 relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-outline text-sm font-bold">$</span>
+                <input
+                  type="number"
+                  value={sMonto}
+                  onChange={(e) => setSMonto(e.target.value)}
+                  placeholder="Monto"
+                  className="w-full pl-8 pr-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-amber-500 text-on-surface"
+                />
+              </div>
+              <button
+                onClick={handleProcesarClaseSuelta}
+                disabled={syncing || !sNombre.trim()}
+                className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold disabled:opacity-50 transition-colors"
+              >
+                {syncing
+                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner" />
+                  : <Icon name="add" size={20} />}
+              </button>
+            </div>
+            {resultadoSuelta && (
+              <div className={`p-3 rounded-xl flex items-center gap-2 ${resultadoSuelta.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+                <Icon name={resultadoSuelta.success ? 'check_circle' : 'error'} size={20} />
+                <span className="font-medium">{resultadoSuelta.mensaje}</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Pending Payments */}
       {pagosPendientes.length > 0 && (
         <div className="bg-surface-container-lowest rounded-3xl overflow-hidden">
           <div className="p-4 border-b border-surface-container flex items-center justify-between">
@@ -116,17 +227,17 @@ const Pagos = ({
         </div>
       )}
 
-      {/* Payments List */}
+      {/* Membresía payments list */}
       <div className="bg-surface-container-lowest rounded-3xl overflow-hidden">
         <div className="p-4 border-b border-surface-container">
           <h3 className="font-bold text-on-surface flex items-center gap-2">
             <Icon name="check_circle" className="text-success" size={20} />
-            Pagos Registrados
+            Membresías ({pagosMembresia.length})
           </h3>
         </div>
         <div className="divide-y divide-surface-container">
-          {pagosDisciplina.filter(p => p.estado === 'Pagado').map((pago, i) => {
-            const alumno = alumnos.find(a => a.id === pago.alumnoid);
+          {pagosMembresia.map((pago, i) => {
+            const alumno = alumnos.find(a => a.id === pago.alumnoId);
             return (
               <div key={i} className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
@@ -135,20 +246,49 @@ const Pagos = ({
                   </div>
                   <div>
                     <p className="font-medium text-on-surface">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                    <p className="text-xs text-on-surface-variant">{pago.metodo} • {pago.fecha || 'Sin fecha'}</p>
+                    <p className="text-xs text-on-surface-variant">{pago.metodo || 'EFT'}</p>
                   </div>
                 </div>
                 <p className="font-bold text-success">{formatMonto(pago.monto)}</p>
               </div>
             );
           })}
-          {pagosDisciplina.filter(p => p.estado === 'Pagado').length === 0 && (
-            <div className="p-8 text-center text-on-surface-variant">
-              No hay pagos registrados este mes
-            </div>
+          {pagosMembresia.length === 0 && (
+            <div className="p-8 text-center text-on-surface-variant">No hay membresías registradas este mes</div>
           )}
         </div>
       </div>
+
+      {/* Clases sueltas list */}
+      {pagosSueltos.length > 0 && (
+        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden">
+          <div className="p-4 border-b border-surface-container">
+            <h3 className="font-bold text-on-surface flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
+              Clases Sueltas ({pagosSueltos.length})
+            </h3>
+          </div>
+          <div className="divide-y divide-surface-container">
+            {pagosSueltos.map((pago, i) => {
+              const alumno = alumnos.find(a => a.id === pago.alumnoId);
+              return (
+                <div key={i} className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                      <Icon name="bolt" className="text-amber-600" size={20} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-on-surface">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
+                      <p className="text-xs text-on-surface-variant">{pago.fecha} • {pago.horario}</p>
+                    </div>
+                  </div>
+                  <p className="font-bold text-amber-600">{formatMonto(pago.monto)}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

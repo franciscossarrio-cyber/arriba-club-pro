@@ -5,8 +5,8 @@ const BottomNav = ({ seccionActiva, setSeccionActiva }) => {
     { id: 'dashboard', icon: 'dashboard', label: 'Home' },
     { id: 'alumnos', icon: 'group', label: 'Alumnos' },
     { id: 'clases', icon: 'fact_check', label: 'Clases' },
+    { id: 'canchas', icon: 'grid_view', label: 'Canchas' },
     { id: 'pagos', icon: 'payments', label: 'Pagos' },
-    { id: 'profesores', icon: 'sports', label: 'Profes' },
   ];
 
   return (

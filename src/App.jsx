@@ -10,7 +10,9 @@ import Clases from './components/Clases';
 import Pagos from './components/Pagos';
 import Profesores from './components/Profesores';
 import Configuracion from './components/Configuracion';
+import GrillaCancha from './components/GrillaCancha';
 import Icon from './components/Icon';
+import DisciplinaIcon from './components/DisciplinaIcon';
 
 // Hooks & Utils
 import { useFirestore } from './hooks/useFirestore';
@@ -21,6 +23,7 @@ import {
   PRECIOS_DEFAULT,
   getMesActual,
   getFechasClaseMes,
+  getFechasMes,
   parseMesActual,
   formatMonto,
   buscarAlumno,
@@ -70,6 +73,9 @@ function App() {
     addProfesor,
     deleteProfesor,
     llenarCuposMembresia,
+    agregarAlumnoASlot,
+    removerAlumnoDeSlot,
+    setSlot,
   } = useFirestore();
 
   // Computed
@@ -420,6 +426,36 @@ function App() {
     }
   };
 
+  const handleProcesarClaseSuelta = async (alumnoNombre, fecha, horario, monto) => {
+    const alumno = buscarAlumno(alumnoNombre, alumnos);
+    if (!alumno) return { success: false, mensaje: `No encontré "${alumnoNombre}"` };
+
+    setSyncing(true);
+    try {
+      const fechaCompleta = `${fecha}/${anio}`;
+      await addPago({
+        alumnoId: alumno.id,
+        nombre: alumno.nombre,
+        mes: mesActual,
+        monto,
+        estado: 'Pagado',
+        metodo: 'EFT',
+        disciplina: disciplinaActiva,
+        tipo: 'suelta',
+        fecha: fechaCompleta,
+        horario,
+      });
+      // Agrega al alumno al slot de cancha3 para esa fecha/horario
+      await agregarAlumnoASlot('cancha3', fecha, horario, alumno.id);
+      await cargarDatos();
+      return { success: true, mensaje: `✓ ${alumno.nombre} — Clase suelta ${fecha} ${horario}` };
+    } catch (err) {
+      return { success: false, mensaje: 'Error de conexión' };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // Llena los cupos del mes para TODOS los alumnos activos con diasElegidos
   const handleLlenarMes = async () => {
     const activos = alumnosDisciplina.filter(
@@ -440,6 +476,45 @@ function App() {
     } catch (err) {
       console.error('Error llenarMes:', err);
       setError(err?.message || 'Error al llenar mes');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleAgregarAlumnoSlot = async (canchaId, fecha, horario, alumnoId) => {
+    setSyncing(true);
+    try {
+      await agregarAlumnoASlot(canchaId, fecha, horario, alumnoId);
+      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
+      setOcupacion(ocupData);
+    } catch (err) {
+      setError('Error al agregar alumno al slot');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleRemoverAlumnoSlot = async (canchaId, fecha, horario, alumnoId) => {
+    setSyncing(true);
+    try {
+      await removerAlumnoDeSlot(canchaId, fecha, horario, alumnoId);
+      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
+      setOcupacion(ocupData);
+    } catch (err) {
+      setError('Error al remover alumno del slot');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleCrearSlot = async (canchaId, fecha, horario, data) => {
+    setSyncing(true);
+    try {
+      await setSlot(canchaId, fecha, horario, { ...data, mes: mesActual });
+      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
+      setOcupacion(ocupData);
+    } catch (err) {
+      setError('Error al crear slot');
     } finally {
       setSyncing(false);
     }
@@ -506,11 +581,12 @@ function App() {
           </div>
           <div className="flex items-center gap-3">
             {syncing && <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full spinner"></div>}
-            <div className="lg:hidden">
+            <div className="lg:hidden flex items-center gap-2 bg-surface-container-low rounded-2xl px-3 py-1.5">
+              <DisciplinaIcon disciplina={disciplinaActiva} size={22} />
               <select
                 value={disciplinaActiva}
                 onChange={(e) => setDisciplinaActiva(e.target.value)}
-                className="px-3 py-2 bg-primary/10 border-0 rounded-xl text-primary text-xs font-bold"
+                className="bg-transparent border-0 text-on-surface text-xs font-bold focus:ring-0 cursor-pointer"
               >
                 {DISCIPLINAS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
@@ -576,7 +652,9 @@ function App() {
               pagosDisciplina={pagosDisciplina}
               alumnos={alumnos}
               preciosDisciplina={preciosDisciplina}
+              fechasMes={getFechasMes(mesNum, anio)}
               onProcesarPago={handleProcesarPago}
+              onProcesarSuelta={handleProcesarClaseSuelta}
               syncing={syncing}
             />
           )}
@@ -592,6 +670,22 @@ function App() {
               onGuardarProfe={handleGuardarProfe}
               onEliminarProfe={handleEliminarProfe}
               onAsignarClase={handleAsignarClase}
+              syncing={syncing}
+            />
+          )}
+
+          {seccionActiva === 'canchas' && (
+            <GrillaCancha
+              mesActual={mesActual}
+              mesNum={mesNum}
+              anio={anio}
+              ocupacion={ocupacion}
+              alumnos={alumnos}
+              asistencias={asistencias}
+              onAgregar={handleAgregarAlumnoSlot}
+              onRemover={handleRemoverAlumnoSlot}
+              onCrearSlot={handleCrearSlot}
+              onRegistrarAsistencia={handleRegistrarAsistencia}
               syncing={syncing}
             />
           )}

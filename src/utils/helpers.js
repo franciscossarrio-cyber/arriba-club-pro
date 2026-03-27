@@ -62,6 +62,18 @@ export const getWhatsAppLink = (alumno, mesActual, preciosDisciplina) => {
   return `https://wa.me/${telefono}?text=${mensaje}`;
 };
 
+// Todas las fechas "dd/mm" de un mes
+export const getFechasMes = (mes, anio) => {
+  const fechas = [];
+  const ultimo = new Date(anio, mes, 0).getDate();
+  for (let d = 1; d <= ultimo; d++) {
+    const dia = String(d).padStart(2, '0');
+    const mesStr = String(mes).padStart(2, '0');
+    fechas.push(`${dia}/${mesStr}`);
+  }
+  return fechas;
+};
+
 // Buscar alumno por nombre o apodo
 export const buscarAlumno = (texto, alumnos) => {
   const t = texto.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");

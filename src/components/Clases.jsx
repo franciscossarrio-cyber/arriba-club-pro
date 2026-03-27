@@ -296,15 +296,20 @@ const Clases = ({
                     <div
                       key={alumnoId}
                       className={`flex items-center justify-between p-4 transition-colors ${
-                        estado === 'cambio_turno' ? 'bg-amber-50/50' : 'hover:bg-surface-container-low'
+                        estado === 'asistio'      ? 'bg-green-50/40' :
+                        estado === 'falto'        ? 'bg-red-50/40'   :
+                        estado === 'vino_no_pago' ? 'bg-blue-50/40'  :
+                        estado === 'cambio_turno' ? 'bg-amber-50/40' :
+                        'hover:bg-surface-container-low'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                          estado === 'asistio'     ? 'bg-success/20 text-success' :
-                          estado === 'falto'       ? 'bg-error/20 text-error' :
-                          estado === 'cambio_turno'? 'bg-amber-500/20 text-amber-600' :
-                                                    'bg-primary/10 text-primary'
+                          estado === 'asistio'      ? 'bg-green-100 text-green-700' :
+                          estado === 'falto'        ? 'bg-red-100 text-red-700' :
+                          estado === 'vino_no_pago' ? 'bg-blue-100 text-blue-700' :
+                          estado === 'cambio_turno' ? 'bg-amber-100 text-amber-700' :
+                                                      'bg-primary/10 text-primary'
                         }`}>
                           {alumno?.nombre?.charAt(0) || '?'}
                         </div>
@@ -314,42 +319,54 @@ const Clases = ({
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5">
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'asistio')}
                           disabled={syncing}
-                          title="Fue"
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                          title="Vino y pagó"
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                             estado === 'asistio'
-                              ? 'bg-success text-white shadow-md shadow-success/30'
-                              : 'bg-surface-container-high text-outline hover:bg-success/10 hover:text-success'
+                              ? 'bg-green-500 text-white shadow-md'
+                              : 'bg-surface-container-high text-outline hover:bg-green-50 hover:text-green-600'
                           }`}
                         >
-                          <Icon name="check" size={20} />
+                          <Icon name="check" size={18} />
                         </button>
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'falto')}
                           disabled={syncing}
-                          title="Faltó"
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                          title="No vino"
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                             estado === 'falto'
-                              ? 'bg-error text-white shadow-md shadow-error/30'
-                              : 'bg-surface-container-high text-outline hover:bg-error/10 hover:text-error'
+                              ? 'bg-red-500 text-white shadow-md'
+                              : 'bg-surface-container-high text-outline hover:bg-red-50 hover:text-red-600'
                           }`}
                         >
-                          <Icon name="close" size={20} />
+                          <Icon name="close" size={18} />
+                        </button>
+                        <button
+                          onClick={() => toggleAsistencia(alumnoId, estado, 'vino_no_pago')}
+                          disabled={syncing}
+                          title="Vino sin pagar"
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                            estado === 'vino_no_pago'
+                              ? 'bg-blue-500 text-white shadow-md'
+                              : 'bg-surface-container-high text-outline hover:bg-blue-50 hover:text-blue-600'
+                          }`}
+                        >
+                          <Icon name="attach_money" size={18} />
                         </button>
                         <button
                           onClick={() => toggleAsistencia(alumnoId, estado, 'cambio_turno')}
                           disabled={syncing}
-                          title="Pidió cambio de turno"
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                          title="Canceló"
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                             estado === 'cambio_turno'
-                              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30'
-                              : 'bg-surface-container-high text-outline hover:bg-amber-500/10 hover:text-amber-600'
+                              ? 'bg-amber-500 text-white shadow-md'
+                              : 'bg-surface-container-high text-outline hover:bg-amber-50 hover:text-amber-600'
                           }`}
                         >
-                          <Icon name="sync" size={20} />
+                          <Icon name="cancel" size={18} />
                         </button>
                       </div>
                     </div>
@@ -359,10 +376,11 @@ const Clases = ({
             </div>
           )}
 
-          <div className="flex gap-4 text-xs text-on-surface-variant px-1">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-success inline-block"></span>Fue</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-error inline-block"></span>Faltó</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>Cambio de turno</span>
+          <div className="flex gap-4 flex-wrap text-xs text-on-surface-variant px-1">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"/>{`Vino y pagó`}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"/>No vino</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"/>Vino sin pagar</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"/>Canceló</span>
           </div>
         </div>
       )}
