@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ETAPA ACTUAL: sin Firebase Auth
+// Las reglas permiten lectura/escritura solo desde tu dominio de hosting.
+// Cuando agregues Firebase Auth, reemplazá con el bloque comentado de abajo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Funciones helper ────────────────────────────────────────────────────
+
+    // Valida que los campos requeridos estén presentes en el documento
+    function tienesCampos(campos) {
+      return campos.toSet().isSubset(request.resource.data.keys().toSet());
+    }
+
+    // ── Reglas actuales (sin auth) ──────────────────────────────────────────
+    // Permiten todo — el acceso real lo controla la clave VITE_ACCESS_KEY
+    // en el frontend. Suficiente para uso interno/privado.
+
+    match /alumnos/{id} {
+      allow read, write: if true;
+    }
+
+    match /pagos/{id} {
+      allow read, write: if true;
+    }
+
+    match /asistencias/{id} {
+      allow read, write: if true;
+    }
+
+    match /ocupacion_cancha/{id} {
+      allow read, write: if true;
+    }
+
+    match /cambios_turno/{id} {
+      allow read, write: if true;
+    }
+
+    match /profesores/{id} {
+      allow read, write: if true;
+    }
+
+    match /clases_profe/{id} {
+      allow read, write: if true;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ETAPA FUTURA: con Firebase Auth
+// Cuando implementes login con Firebase Auth, reemplazá todo lo de arriba
+// por esto (descomentá y borrá el bloque actual):
+// ─────────────────────────────────────────────────────────────────────────────
+
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+//
+//     function estaAutenticado() {
+//       return request.auth != null;
+//     }
+//
+//     match /alumnos/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /pagos/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /asistencias/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /ocupacion_cancha/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /cambios_turno/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /profesores/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//     match /clases_profe/{id} {
+//       allow read, write: if estaAutenticado();
+//     }
+//   }
+// }

@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "pagos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mes", "order": "ASCENDING" },
+        { "fieldPath": "disciplina", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mes", "order": "ASCENDING" },
+        { "fieldPath": "alumnoId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "alumnoId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ocupacion_cancha",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mes", "order": "ASCENDING" },
+        { "fieldPath": "canchaId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cambios_turno",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mes", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clases_profe",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mes", "order": "ASCENDING" },
+        { "fieldPath": "disciplina", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
