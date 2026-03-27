@@ -39,7 +39,8 @@ function App() {
   // Data
   const [alumnos, setAlumnos] = useState([]);
   const [pagos, setPagos] = useState([]);
-  const [asistencias, setAsistencias] = useState({});
+  const [asistencias, setAsistencias] = useState({});   // { alumnoId: { 'dd/mm': estado } }
+  const [ocupacion, setOcupacion] = useState([]);        // docs de ocupacion_cancha
   const [profesores, setProfesores] = useState(() => storage.get('profesores') || []);
   const [clasesPorProfe, setClasesPorProfe] = useState(() => storage.get('clases_profe') || {});
   const [precios, setPrecios] = useState(() => storage.get('precios') || PRECIOS_DEFAULT);
@@ -51,11 +52,12 @@ function App() {
   const [horarioFiltro, setHorarioFiltro] = useState('todos');
   const [error, setError] = useState(null);
 
-  // Firestore — solo desestructuramos las funciones; loading/error los maneja el App
+  // Firestore
   const {
     getAlumnos,
     getPagos,
     getAsistencias,
+    getOcupacionMes,
     getProfesores,
     getClasesProfe,
     addAlumno,
@@ -67,12 +69,12 @@ function App() {
     setClaseProfe,
     addProfesor,
     deleteProfesor,
+    llenarCuposMembresia,
   } = useFirestore();
 
   // Computed
   const { mesNum, anio } = parseMesActual(mesActual);
   const fechasClase = getFechasClaseMes(mesNum, anio);
-  const [fechaSeleccionada, setFechaSeleccionada] = useState(fechasClase[0] || '');
 
   // Effects — persistir en localStorage
   useEffect(() => { storage.set('disciplina', disciplinaActiva); }, [disciplinaActiva]);
@@ -81,60 +83,50 @@ function App() {
   useEffect(() => { if (Object.keys(clasesPorProfe).length > 0) storage.set('clases_profe', clasesPorProfe); }, [clasesPorProfe]);
 
   // Auth
-  const handleLogin = () => {
-    setAutenticado(true);
-    storage.set('auth', true);
-  };
-
-  const handleLogout = () => {
-    setAutenticado(false);
-    storage.remove('auth');
-  };
+  const handleLogin = () => { setAutenticado(true); storage.set('auth', true); };
+  const handleLogout = () => { setAutenticado(false); storage.remove('auth'); };
 
   // ── Carga de datos ─────────────────────────────────────────────────────────
   const cargarDatos = useCallback(async () => {
     try {
       setLoading(true);
-      const [alumnosData, pagosData, asistData, profesData, clasesProfeData] = await Promise.all([
+      const [alumnosData, pagosData, asistData, ocupData, profesData, clasesProfeData] = await Promise.all([
         getAlumnos(),
         getPagos(mesActual),
         getAsistencias(mesActual),
+        getOcupacionMes(mesActual).catch(() => []),
         getProfesores().catch(() => []),
         getClasesProfe(mesActual).catch(() => []),
       ]);
 
-      // Alumnos
       setAlumnos(alumnosData.map(a => ({
         ...a,
         disciplinas: a.disciplinas || ['Futvoley'],
         horario: a.horario || '18:00',
+        diasElegidos: a.diasElegidos || [],
       })));
 
-      // Pagos
       setPagos(pagosData);
 
-      // Asistencias → { alumnoId: ['dd/mm', ...] }
+      // Asistencias → { alumnoId: { 'dd/mm': estado } }
       const asistPorAlumno = {};
       asistData.forEach(a => {
-        if (!asistPorAlumno[a.alumnoId]) asistPorAlumno[a.alumnoId] = [];
+        if (!asistPorAlumno[a.alumnoId]) asistPorAlumno[a.alumnoId] = {};
         const fechaCorta = a.fecha ? a.fecha.substring(0, 5) : '';
-        if (fechaCorta && !asistPorAlumno[a.alumnoId].includes(fechaCorta)) {
-          asistPorAlumno[a.alumnoId].push(fechaCorta);
-        }
+        if (fechaCorta) asistPorAlumno[a.alumnoId][fechaCorta] = a.estado || 'asistio';
       });
       setAsistencias(asistPorAlumno);
 
-      // Profesores
+      setOcupacion(ocupData);
+
       if (profesData.length > 0) {
         setProfesores(profesData);
         storage.set('profesores', profesData);
       }
 
-      // Clases profe → { 'disciplina-fecha-horario': profesorId }
       if (clasesProfeData.length > 0) {
         const clasesObj = clasesProfeData.reduce(
-          (acc, c) => ({ ...acc, [c.id]: c.profesorId }),
-          {},
+          (acc, c) => ({ ...acc, [c.id]: c.profesorId }), {},
         );
         setClasesPorProfe(clasesObj);
         storage.set('clases_profe', clasesObj);
@@ -144,7 +136,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [getAlumnos, getPagos, getAsistencias, getProfesores, getClasesProfe, mesActual]);
+  }, [getAlumnos, getPagos, getAsistencias, getOcupacionMes, getProfesores, getClasesProfe, mesActual]);
 
   useEffect(() => {
     if (autenticado) cargarDatos();
@@ -176,7 +168,6 @@ function App() {
     return matchBusqueda && matchHorario;
   });
 
-  // Cálculo de pago a profesores
   const calcularPagoProfesores = () => {
     const totalCobrado = montoCobrado;
     const totalParaProfes = totalCobrado * 0.5;
@@ -215,10 +206,7 @@ function App() {
   const handleGuardarAlumno = async (nuevoAlumno) => {
     setSyncing(true);
     try {
-      await addAlumno({
-        ...nuevoAlumno,
-        disciplinas: nuevoAlumno.disciplinas || [disciplinaActiva],
-      });
+      await addAlumno({ ...nuevoAlumno, disciplinas: nuevoAlumno.disciplinas || [disciplinaActiva] });
       await cargarDatos();
     } catch (err) {
       setError('Error al guardar');
@@ -230,7 +218,6 @@ function App() {
   const handleEditarAlumno = async (alumno) => {
     setSyncing(true);
     try {
-      // Separamos id y creadoEn para no sobreescribir metadatos
       const { id, creadoEn, ...data } = alumno;
       await updateAlumno(id, data);
       await cargarDatos();
@@ -268,7 +255,6 @@ function App() {
   };
 
   const handleAsignarClase = async (fecha, horario, profeId) => {
-    // Optimistic update local
     const key = `${disciplinaActiva}-${fecha}-${horario}`;
     setClasesPorProfe(prev => ({ ...prev, [key]: profeId }));
     try {
@@ -278,32 +264,40 @@ function App() {
     }
   };
 
-  const handleToggleAsistencia = async (alumnoId, fecha) => {
+  /**
+   * Registra o cambia el estado de asistencia de un alumno en un slot.
+   * Si `nuevoEstado` es null, borra la asistencia (toggle off).
+   * estados: 'asistio' | 'falto' | 'cambio_turno'
+   */
+  const handleRegistrarAsistencia = async (alumnoId, fecha, horario, nuevoEstado) => {
     const fechaCompleta = `${fecha}/${anio}`;
-    const asiste = (asistencias[alumnoId] || []).includes(fecha);
-    const alumno = alumnos.find(a => a.id === alumnoId);
     setSyncing(true);
     try {
-      if (asiste) {
-        await removeAsistencia(alumnoId, fechaCompleta);
-        setAsistencias(prev => ({
-          ...prev,
-          [alumnoId]: (prev[alumnoId] || []).filter(f => f !== fecha)
-        }));
-      } else {
+      // Borra el registro existente para este slot (si hay)
+      await removeAsistencia(alumnoId, fechaCompleta, horario);
+
+      if (nuevoEstado) {
         await addAsistencia({
           alumnoId,
           fecha: fechaCompleta,
           mes: mesActual,
           disciplina: disciplinaActiva,
-          horario: alumno?.horario || '',
-          estado: 'asistio',
+          horario,
+          estado: nuevoEstado,
         });
-        setAsistencias(prev => ({
-          ...prev,
-          [alumnoId]: [...(prev[alumnoId] || []), fecha]
-        }));
       }
+
+      setAsistencias(prev => {
+        const nuevo = { ...prev };
+        if (!nuevo[alumnoId]) nuevo[alumnoId] = {};
+        if (nuevoEstado) {
+          nuevo[alumnoId] = { ...nuevo[alumnoId], [fecha]: nuevoEstado };
+        } else {
+          const { [fecha]: _, ...rest } = nuevo[alumnoId];
+          nuevo[alumnoId] = rest;
+        }
+        return nuevo;
+      });
     } catch (err) {
       setError('Error al guardar');
     } finally {
@@ -350,8 +344,8 @@ function App() {
         setAsistencias(prev => {
           const nuevo = { ...prev };
           encontrados.forEach(a => {
-            if (!nuevo[a.id]) nuevo[a.id] = [];
-            if (!nuevo[a.id].includes(fechaLista)) nuevo[a.id].push(fechaLista);
+            if (!nuevo[a.id]) nuevo[a.id] = {};
+            nuevo[a.id] = { ...nuevo[a.id], [fechaLista]: 'asistio' };
           });
           return nuevo;
         });
@@ -381,9 +375,7 @@ function App() {
       if (alumno) break;
     }
 
-    if (!alumno) {
-      return { success: false, mensaje: `No encontré "${inputComando}"` };
-    }
+    if (!alumno) return { success: false, mensaje: `No encontré "${inputComando}"` };
 
     const mesEncontrado = MESES.find(m => inputComando.toLowerCase().includes(m.toLowerCase()));
     const mes = mesEncontrado ? `${mesEncontrado} ${anio}` : mesActual;
@@ -391,9 +383,7 @@ function App() {
     const existe = pagosDisciplina.find(p =>
       p.alumnoId === alumno.id && p.mes === mes && p.estado === 'Pagado'
     );
-    if (existe) {
-      return { success: false, mensaje: `${alumno.nombre} ya pagó ${mes}` };
-    }
+    if (existe) return { success: false, mensaje: `${alumno.nombre} ya pagó ${mes}` };
 
     const monto = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 95000;
     setSyncing(true);
@@ -407,6 +397,20 @@ function App() {
         metodo: 'EFT',
         disciplina: disciplinaActiva,
       });
+
+      // Auto-llenar cupos en cancha3 si el alumno tiene días elegidos
+      if (alumno.diasElegidos?.length > 0 && alumno.horario) {
+        const { mesNum: mNum, anio: mAnio } = parseMesActual(mes);
+        await llenarCuposMembresia(
+          alumno.id,
+          alumno.diasElegidos,
+          alumno.horario,
+          mNum,
+          mAnio,
+          disciplinaActiva,
+        ).catch(() => {}); // no bloquear el pago si falla
+      }
+
       await cargarDatos();
       return { success: true, mensaje: `✓ ${alumno.nombre} - ${formatMonto(monto)}` };
     } catch (err) {
@@ -416,26 +420,19 @@ function App() {
     }
   };
 
-  // Precios: solo localStorage (no hay colección Firestore para precios)
   const handleUpdatePrecios = (disciplina, plan, frecuencia, valor) => {
     setPrecios(prev => ({
       ...prev,
       [disciplina]: {
         ...prev[disciplina],
-        [plan]: {
-          ...prev[disciplina]?.[plan],
-          [frecuencia]: valor
-        }
+        [plan]: { ...prev[disciplina]?.[plan], [frecuencia]: valor }
       }
     }));
-    // persistido automáticamente via useEffect → storage.set('precios', ...)
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (!autenticado) {
-    return <Login onLogin={handleLogin} />;
-  }
+  if (!autenticado) return <Login onLogin={handleLogin} />;
 
   if (loading) {
     return (
@@ -450,17 +447,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Error Toast */}
       {error && (
         <div className="fixed top-4 right-4 bg-error text-white px-4 py-3 rounded-2xl shadow-lg fade-in flex items-center gap-3 z-[100]">
           <span>{error}</span>
-          <button onClick={() => setError(null)}>
-            <Icon name="close" size={18} />
-          </button>
+          <button onClick={() => setError(null)}><Icon name="close" size={18} /></button>
         </div>
       )}
 
-      {/* Desktop Sidebar */}
       <Sidebar
         seccionActiva={seccionActiva}
         setSeccionActiva={setSeccionActiva}
@@ -471,9 +464,7 @@ function App() {
         syncing={syncing}
       />
 
-      {/* Main Content */}
       <main className="lg:pl-72 min-h-screen pb-24 lg:pb-8">
-        {/* Top Header */}
         <header className="flex justify-between items-center w-full px-6 py-4 lg:py-6 sticky top-0 z-40 bg-surface/80 backdrop-blur-md">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-bold text-on-surface lg:hidden">Arriba Club</h2>
@@ -502,7 +493,6 @@ function App() {
           </div>
         </header>
 
-        {/* Content */}
         <div className="px-6 fade-in">
           {seccionActiva === 'dashboard' && (
             <Dashboard
@@ -536,19 +526,16 @@ function App() {
             <Clases
               disciplinaActiva={disciplinaActiva}
               mesActual={mesActual}
-              fechasClase={fechasClase}
-              fechaSeleccionada={fechaSeleccionada}
-              setFechaSeleccionada={setFechaSeleccionada}
-              horarioFiltro={horarioFiltro}
-              setHorarioFiltro={setHorarioFiltro}
-              alumnosFiltrados={alumnosFiltrados}
+              anio={anio}
+              ocupacion={ocupacion}
+              alumnos={alumnos}
+              alumnosDisciplina={alumnosDisciplina}
               asistencias={asistencias}
               profesores={profesores}
               clasesPorProfe={clasesPorProfe}
-              onToggleAsistencia={handleToggleAsistencia}
+              onRegistrarAsistencia={handleRegistrarAsistencia}
               onProcesarLista={handleProcesarLista}
               syncing={syncing}
-              anio={anio}
             />
           )}
 
@@ -592,11 +579,7 @@ function App() {
         </div>
       </main>
 
-      {/* Mobile Bottom Nav */}
-      <BottomNav
-        seccionActiva={seccionActiva}
-        setSeccionActiva={setSeccionActiva}
-      />
+      <BottomNav seccionActiva={seccionActiva} setSeccionActiva={setSeccionActiva} />
     </div>
   );
 }

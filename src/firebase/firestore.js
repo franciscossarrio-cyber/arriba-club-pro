@@ -196,15 +196,18 @@ export async function addAsistenciasLote(items) {
 }
 
 /**
- * Elimina una asistencia por alumnoId + fecha.
- * Borra todos los docs que coincidan (en caso de duplicados).
+ * Elimina una asistencia por alumnoId + fecha (+ horario opcional).
+ * Borra todos los docs que coincidan.
  */
-export async function removeAsistencia(alumnoId, fecha) {
-  const q = query(
+export async function removeAsistencia(alumnoId, fecha, horario = null) {
+  let q = query(
     collection(db, 'asistencias'),
     where('alumnoId', '==', alumnoId),
     where('fecha', '==', fecha),
   );
+  if (horario) {
+    q = query(q, where('horario', '==', horario));
+  }
   const snap = await getDocs(q);
   if (snap.empty) return;
   const batch = writeBatch(db);
