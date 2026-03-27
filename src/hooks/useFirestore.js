@@ -8,7 +8,7 @@
  *   const { getAlumnos, addPago, loading, error, clearError } = useFirestore();
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import * as fs from '../firebase/firestore';
 
 export const useFirestore = () => {
@@ -39,12 +39,9 @@ export const useFirestore = () => {
     [],
   );
 
-  return {
-    // ── Estado ────────────────────────────────────────────────────────────
-    loading,
-    error,
-    clearError,
-
+  // Funciones estables via useMemo (solo se recrean si `wrap` cambia, que es nunca).
+  // Esto evita que useCallback en los consumidores se dispare en cada render.
+  const fns = useMemo(() => ({
     // ── Alumnos ───────────────────────────────────────────────────────────
     /** @returns {Promise<Array>} lista de alumnos con campo `id` */
     getAlumnos:      wrap(fs.getAlumnos),
@@ -147,6 +144,14 @@ export const useFirestore = () => {
     setClaseProfe:  wrap(fs.setClaseProfe),
     /** @param {string} disciplina @param {string} fecha @param {string} horario */
     deleteClaseProfe: wrap(fs.deleteClaseProfe),
+  }), [wrap]);
+
+  return {
+    // ── Estado ────────────────────────────────────────────────────────────
+    loading,
+    error,
+    clearError,
+    ...fns,
   };
 };
 

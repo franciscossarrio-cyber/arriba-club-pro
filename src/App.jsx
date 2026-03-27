@@ -13,7 +13,7 @@ import Configuracion from './components/Configuracion';
 import Icon from './components/Icon';
 
 // Hooks & Utils
-import { useApi } from './hooks/useApi';
+import { useFirestore } from './hooks/useFirestore';
 import {
   DISCIPLINAS,
   HORARIOS,
@@ -30,12 +30,12 @@ import {
 function App() {
   // Auth
   const [autenticado, setAutenticado] = useState(() => storage.get('auth') === true);
-  
+
   // Navigation
   const [seccionActiva, setSeccionActiva] = useState('dashboard');
   const [disciplinaActiva, setDisciplinaActiva] = useState(() => storage.get('disciplina') || 'Futvoley');
   const [mesActual, setMesActual] = useState(getMesActual());
-  
+
   // Data
   const [alumnos, setAlumnos] = useState([]);
   const [pagos, setPagos] = useState([]);
@@ -43,7 +43,7 @@ function App() {
   const [profesores, setProfesores] = useState(() => storage.get('profesores') || []);
   const [clasesPorProfe, setClasesPorProfe] = useState(() => storage.get('clases_profe') || {});
   const [precios, setPrecios] = useState(() => storage.get('precios') || PRECIOS_DEFAULT);
-  
+
   // UI State
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -51,21 +51,36 @@ function App() {
   const [horarioFiltro, setHorarioFiltro] = useState('todos');
   const [error, setError] = useState(null);
 
-  // API
-  const { apiGet, apiPost } = useApi();
+  // Firestore — solo desestructuramos las funciones; loading/error los maneja el App
+  const {
+    getAlumnos,
+    getPagos,
+    getAsistencias,
+    getProfesores,
+    getClasesProfe,
+    addAlumno,
+    updateAlumno,
+    addPago,
+    addAsistencia,
+    addAsistenciasLote,
+    removeAsistencia,
+    setClaseProfe,
+    addProfesor,
+    deleteProfesor,
+  } = useFirestore();
 
   // Computed
   const { mesNum, anio } = parseMesActual(mesActual);
   const fechasClase = getFechasClaseMes(mesNum, anio);
   const [fechaSeleccionada, setFechaSeleccionada] = useState(fechasClase[0] || '');
 
-  // Effects - Persist to localStorage
+  // Effects — persistir en localStorage
   useEffect(() => { storage.set('disciplina', disciplinaActiva); }, [disciplinaActiva]);
   useEffect(() => { storage.set('precios', precios); }, [precios]);
   useEffect(() => { if (profesores.length > 0) storage.set('profesores', profesores); }, [profesores]);
   useEffect(() => { if (Object.keys(clasesPorProfe).length > 0) storage.set('clases_profe', clasesPorProfe); }, [clasesPorProfe]);
 
-  // Auth handlers
+  // Auth
   const handleLogin = () => {
     setAutenticado(true);
     storage.set('auth', true);
@@ -76,62 +91,66 @@ function App() {
     storage.remove('auth');
   };
 
-  // Load data
+  // ── Carga de datos ─────────────────────────────────────────────────────────
   const cargarDatos = useCallback(async () => {
     try {
       setLoading(true);
-      const [alumnosRes, pagosRes, asistRes, profesRes, preciosRes, clasesProfeRes] = await Promise.all([
-        apiGet('getAlumnos'),
-        apiGet('getPagos', { mes: mesActual }),
-        apiGet('getAsistencias', { mes: mesActual }),
-        apiGet('getProfesores').catch(() => null),
-        apiGet('getPrecios').catch(() => null),
-        apiGet('getClasesProfe', { mes: mesActual }).catch(() => null)
+      const [alumnosData, pagosData, asistData, profesData, clasesProfeData] = await Promise.all([
+        getAlumnos(),
+        getPagos(mesActual),
+        getAsistencias(mesActual),
+        getProfesores().catch(() => []),
+        getClasesProfe(mesActual).catch(() => []),
       ]);
 
-      if (alumnosRes.success) {
-        setAlumnos(alumnosRes.alumnos.map(a => ({
-          ...a,
-          disciplinas: a.disciplinas || ['Futvoley'],
-          horario: a.horario || '18:00'
-        })));
+      // Alumnos
+      setAlumnos(alumnosData.map(a => ({
+        ...a,
+        disciplinas: a.disciplinas || ['Futvoley'],
+        horario: a.horario || '18:00',
+      })));
+
+      // Pagos
+      setPagos(pagosData);
+
+      // Asistencias → { alumnoId: ['dd/mm', ...] }
+      const asistPorAlumno = {};
+      asistData.forEach(a => {
+        if (!asistPorAlumno[a.alumnoId]) asistPorAlumno[a.alumnoId] = [];
+        const fechaCorta = a.fecha ? a.fecha.substring(0, 5) : '';
+        if (fechaCorta && !asistPorAlumno[a.alumnoId].includes(fechaCorta)) {
+          asistPorAlumno[a.alumnoId].push(fechaCorta);
+        }
+      });
+      setAsistencias(asistPorAlumno);
+
+      // Profesores
+      if (profesData.length > 0) {
+        setProfesores(profesData);
+        storage.set('profesores', profesData);
       }
-      if (pagosRes.success) setPagos(pagosRes.pagos);
-      if (asistRes.success) {
-        const asistPorAlumno = {};
-        asistRes.asistencias.forEach(a => {
-          if (!asistPorAlumno[a.alumnoid]) asistPorAlumno[a.alumnoid] = [];
-          const fechaCorta = a.fecha ? a.fecha.substring(0, 5) : '';
-          if (fechaCorta && !asistPorAlumno[a.alumnoid].includes(fechaCorta)) {
-            asistPorAlumno[a.alumnoid].push(fechaCorta);
-          }
-        });
-        setAsistencias(asistPorAlumno);
-      }
-      if (profesRes?.success) {
-        setProfesores(profesRes.profesores);
-        storage.set('profesores', profesRes.profesores);
-      }
-      if (preciosRes?.success) {
-        setPrecios(preciosRes.precios);
-        storage.set('precios', preciosRes.precios);
-      }
-      if (clasesProfeRes?.success) {
-        setClasesPorProfe(clasesProfeRes.clases);
-        storage.set('clases_profe', clasesProfeRes.clases);
+
+      // Clases profe → { 'disciplina-fecha-horario': profesorId }
+      if (clasesProfeData.length > 0) {
+        const clasesObj = clasesProfeData.reduce(
+          (acc, c) => ({ ...acc, [c.id]: c.profesorId }),
+          {},
+        );
+        setClasesPorProfe(clasesObj);
+        storage.set('clases_profe', clasesObj);
       }
     } catch (err) {
       setError('Error de conexión');
     } finally {
       setLoading(false);
     }
-  }, [apiGet, mesActual]);
+  }, [getAlumnos, getPagos, getAsistencias, getProfesores, getClasesProfe, mesActual]);
 
   useEffect(() => {
     if (autenticado) cargarDatos();
   }, [autenticado, mesActual, cargarDatos]);
 
-  // Filters
+  // ── Filtros y cálculos ─────────────────────────────────────────────────────
   const alumnosDisciplina = alumnos.filter(a =>
     a.disciplinas?.includes(disciplinaActiva) || (!a.disciplinas && disciplinaActiva === 'Futvoley')
   );
@@ -139,9 +158,8 @@ function App() {
     p.disciplina === disciplinaActiva || (!p.disciplina && disciplinaActiva === 'Futvoley')
   );
 
-  // Calculations
   const alumnosActivos = alumnosDisciplina.filter(a => a.estado === 'Activo');
-  const alumnosConPago = new Set(pagosDisciplina.filter(p => p.estado === 'Pagado').map(p => p.alumnoid));
+  const alumnosConPago = new Set(pagosDisciplina.filter(p => p.estado === 'Pagado').map(p => p.alumnoId));
   const pagosPendientes = alumnosActivos.filter(a => !alumnosConPago.has(a.id));
   const preciosDisciplina = precios[disciplinaActiva] || PRECIOS_DEFAULT['Futvoley'];
   const montoPendiente = pagosPendientes.reduce((sum, a) =>
@@ -158,7 +176,7 @@ function App() {
     return matchBusqueda && matchHorario;
   });
 
-  // Professors calculation
+  // Cálculo de pago a profesores
   const calcularPagoProfesores = () => {
     const totalCobrado = montoCobrado;
     const totalParaProfes = totalCobrado * 0.5;
@@ -192,12 +210,16 @@ function App() {
 
   const datosProfes = calcularPagoProfesores();
 
-  // Handlers
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
   const handleGuardarAlumno = async (nuevoAlumno) => {
     setSyncing(true);
     try {
-      const res = await apiPost('addAlumno', { alumno: { ...nuevoAlumno, disciplina: disciplinaActiva } });
-      if (res.success) await cargarDatos();
+      await addAlumno({
+        ...nuevoAlumno,
+        disciplinas: nuevoAlumno.disciplinas || [disciplinaActiva],
+      });
+      await cargarDatos();
     } catch (err) {
       setError('Error al guardar');
     } finally {
@@ -208,9 +230,10 @@ function App() {
   const handleEditarAlumno = async (alumno) => {
     setSyncing(true);
     try {
-      const res = await apiPost('updateAlumno', { alumno });
-      if (res.success) await cargarDatos();
-      else setError('Error al editar alumno');
+      // Separamos id y creadoEn para no sobreescribir metadatos
+      const { id, creadoEn, ...data } = alumno;
+      await updateAlumno(id, data);
+      await cargarDatos();
     } catch (err) {
       setError('Error al editar alumno');
     } finally {
@@ -221,12 +244,8 @@ function App() {
   const handleGuardarProfe = async (nuevoProfe) => {
     setSyncing(true);
     try {
-      const res = await apiPost('addProfesor', { profe: { nombre: nuevoProfe.nombre, cbu: nuevoProfe.cbu } });
-      if (res.success) {
-        await cargarDatos();
-      } else {
-        setError('Error al guardar profesor');
-      }
+      await addProfesor({ nombre: nuevoProfe.nombre, cbu: nuevoProfe.cbu });
+      await cargarDatos();
     } catch (err) {
       setError('Error al guardar profesor');
     } finally {
@@ -238,12 +257,8 @@ function App() {
     if (confirm('¿Eliminar profesor?')) {
       setSyncing(true);
       try {
-        const res = await apiPost('eliminarProfesor', { profeId });
-        if (res.success) {
-          await cargarDatos();
-        } else {
-          setError('Error al eliminar profesor');
-        }
+        await deleteProfesor(profeId);
+        await cargarDatos();
       } catch (err) {
         setError('Error al eliminar profesor');
       } finally {
@@ -253,10 +268,11 @@ function App() {
   };
 
   const handleAsignarClase = async (fecha, horario, profeId) => {
+    // Optimistic update local
     const key = `${disciplinaActiva}-${fecha}-${horario}`;
     setClasesPorProfe(prev => ({ ...prev, [key]: profeId }));
     try {
-      await apiPost('asignarClase', { key, profeId, disciplina: disciplinaActiva, fecha, horario });
+      await setClaseProfe(disciplinaActiva, fecha, horario, profeId, mesActual);
     } catch (err) {
       setError('Error al asignar clase');
     }
@@ -265,16 +281,24 @@ function App() {
   const handleToggleAsistencia = async (alumnoId, fecha) => {
     const fechaCompleta = `${fecha}/${anio}`;
     const asiste = (asistencias[alumnoId] || []).includes(fecha);
+    const alumno = alumnos.find(a => a.id === alumnoId);
     setSyncing(true);
     try {
       if (asiste) {
-        await apiPost('removeAsistencia', { alumnoId, fecha: fechaCompleta });
+        await removeAsistencia(alumnoId, fechaCompleta);
         setAsistencias(prev => ({
           ...prev,
           [alumnoId]: (prev[alumnoId] || []).filter(f => f !== fecha)
         }));
       } else {
-        await apiPost('addAsistencia', { alumnoId, fecha: fechaCompleta });
+        await addAsistencia({
+          alumnoId,
+          fecha: fechaCompleta,
+          mes: mesActual,
+          disciplina: disciplinaActiva,
+          horario: alumno?.horario || '',
+          estado: 'asistio',
+        });
         setAsistencias(prev => ({
           ...prev,
           [alumnoId]: [...(prev[alumnoId] || []), fecha]
@@ -313,10 +337,16 @@ function App() {
       const fechaCompleta = `${fechaLista}/${anio}`;
       setSyncing(true);
       try {
-        await apiPost('addAsistenciasLista', {
-          alumnoIds: encontrados.map(a => a.id),
-          fecha: fechaCompleta
-        });
+        await addAsistenciasLote(
+          encontrados.map(a => ({
+            alumnoId: a.id,
+            fecha: fechaCompleta,
+            mes: mesActual,
+            disciplina: disciplinaActiva,
+            horario: horario || a.horario || '',
+            estado: 'asistio',
+          }))
+        );
         setAsistencias(prev => {
           const nuevo = { ...prev };
           encontrados.forEach(a => {
@@ -359,7 +389,7 @@ function App() {
     const mes = mesEncontrado ? `${mesEncontrado} ${anio}` : mesActual;
 
     const existe = pagosDisciplina.find(p =>
-      p.alumnoid === alumno.id && p.mes === mes && p.estado === 'Pagado'
+      p.alumnoId === alumno.id && p.mes === mes && p.estado === 'Pagado'
     );
     if (existe) {
       return { success: false, mensaje: `${alumno.nombre} ya pagó ${mes}` };
@@ -368,22 +398,17 @@ function App() {
     const monto = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 95000;
     setSyncing(true);
     try {
-      const res = await apiPost('addPago', {
-        pago: {
-          alumnoid: alumno.id,
-          nombre: alumno.nombre,
-          mes,
-          monto,
-          estado: 'Pagado',
-          metodo: 'EFT',
-          disciplina: disciplinaActiva
-        }
+      await addPago({
+        alumnoId: alumno.id,
+        nombre: alumno.nombre,
+        mes,
+        monto,
+        estado: 'Pagado',
+        metodo: 'EFT',
+        disciplina: disciplinaActiva,
       });
-      if (res.success) {
-        await cargarDatos();
-        return { success: true, mensaje: `✓ ${alumno.nombre} - ${formatMonto(monto)}` };
-      }
-      return { success: false, mensaje: 'Error al registrar' };
+      await cargarDatos();
+      return { success: true, mensaje: `✓ ${alumno.nombre} - ${formatMonto(monto)}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
     } finally {
@@ -391,30 +416,27 @@ function App() {
     }
   };
 
+  // Precios: solo localStorage (no hay colección Firestore para precios)
   const handleUpdatePrecios = (disciplina, plan, frecuencia, valor) => {
-    setPrecios(prev => {
-      const nuevo = {
-        ...prev,
-        [disciplina]: {
-          ...prev[disciplina],
-          [plan]: {
-            ...prev[disciplina]?.[plan],
-            [frecuencia]: valor
-          }
+    setPrecios(prev => ({
+      ...prev,
+      [disciplina]: {
+        ...prev[disciplina],
+        [plan]: {
+          ...prev[disciplina]?.[plan],
+          [frecuencia]: valor
         }
-      };
-      apiPost('updatePrecio', { disciplina, plan, frecuencia, valor })
-        .catch(() => setError('Error al guardar precio'));
-      return nuevo;
-    });
+      }
+    }));
+    // persistido automáticamente via useEffect → storage.set('precios', ...)
   };
 
-  // Render Login
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   if (!autenticado) {
     return <Login onLogin={handleLogin} />;
   }
 
-  // Render Loading
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface">
@@ -426,7 +448,6 @@ function App() {
     );
   }
 
-  // Render Main App
   return (
     <div className="min-h-screen bg-surface">
       {/* Error Toast */}
