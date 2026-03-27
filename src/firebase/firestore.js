@@ -310,27 +310,29 @@ export async function llenarCuposMembresia(
 
   const mesLabel = `${MESES[mes - 1]} ${anio}`; // ej: "Marzo 2026"
   const canchaId = 'cancha3';
-  const batch = writeBatch(db);
 
-  fechas.forEach((fecha) => {
-    const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
-    batch.set(
-      ref,
-      {
-        canchaId,
-        fecha,
-        horario,
-        mes: mesLabel,
-        disciplina,
-        alumnos: arrayUnion(alumnoId),
-        tipo: 'membresia',
-        creadoEn: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  });
+  // setDoc con merge: true + arrayUnion por cada fecha (evita problemas de
+  // writeBatch + arrayUnion en Firebase v12)
+  await Promise.all(
+    fechas.map((fecha) => {
+      const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
+      return setDoc(
+        ref,
+        {
+          canchaId,
+          fecha,
+          horario,
+          mes: mesLabel,
+          disciplina,
+          alumnos: arrayUnion(alumnoId),
+          tipo: 'membresia',
+          creadoEn: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    })
+  );
 
-  await batch.commit();
   return fechas;
 }
 

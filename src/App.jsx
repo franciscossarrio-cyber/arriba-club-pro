@@ -438,7 +438,8 @@ function App() {
       );
       await cargarDatos();
     } catch (err) {
-      setError('Error al llenar mes');
+      console.error('Error llenarMes:', err);
+      setError(err?.message || 'Error al llenar mes');
     } finally {
       setSyncing(false);
     }
