@@ -2,7 +2,25 @@ import { useState } from 'react';
 import Icon from './Icon';
 import { HORARIOS } from '../utils/helpers';
 
-const ALUMNO_VACIO = { nombre: '', telefono: '', plan: 'Arena Basic', frecuencia: '2x sem', horario: '18:00' };
+// Días de la semana con su número JS (getDay())
+const DIAS = [
+  { nombre: 'Lun', num: 1 },
+  { nombre: 'Mar', num: 2 },
+  { nombre: 'Mié', num: 3 },
+  { nombre: 'Jue', num: 4 },
+  { nombre: 'Vie', num: 5 },
+  { nombre: 'Sáb', num: 6 },
+];
+
+const ALUMNO_VACIO = {
+  nombre: '',
+  telefono: '',
+  plan: 'Arena Basic',
+  frecuencia: '2x sem',
+  horario: '18:00',
+  diasElegidos: [],
+  estado: 'Activo',
+};
 
 const Alumnos = ({
   disciplinaActiva,
@@ -33,7 +51,8 @@ const Alumnos = ({
       plan: alumno.plan || 'Arena Basic',
       frecuencia: alumno.frecuencia || '2x sem',
       horario: alumno.horario || '18:00',
-      estado: alumno.estado || 'Activo'
+      diasElegidos: alumno.diasElegidos || [],
+      estado: alumno.estado || 'Activo',
     });
     setMostrarForm(true);
   };
@@ -42,6 +61,15 @@ const Alumnos = ({
     setMostrarForm(false);
     setAlumnoEditando(null);
     setForm(ALUMNO_VACIO);
+  };
+
+  const toggleDia = (num) => {
+    setForm(prev => ({
+      ...prev,
+      diasElegidos: prev.diasElegidos.includes(num)
+        ? prev.diasElegidos.filter(d => d !== num)
+        : [...prev.diasElegidos, num],
+    }));
   };
 
   const handleGuardar = async () => {
@@ -130,6 +158,16 @@ const Alumnos = ({
                   <p className="text-sm font-bold text-on-surface">{alumno.horario || '18:00'}</p>
                 </div>
               </div>
+              {/* Días elegidos */}
+              {alumno.diasElegidos?.length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {DIAS.filter(d => alumno.diasElegidos.includes(d.num)).map(d => (
+                    <span key={d.num} className="px-2 py-0.5 bg-primary/10 text-primary text-[11px] font-bold rounded-full">
+                      {d.nombre}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -138,7 +176,7 @@ const Alumnos = ({
       {/* New / Edit Student Modal */}
       {mostrarForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={cerrarForm}>
-          <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-md shadow-2xl fade-in overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-on-surface mb-6">
               {alumnoEditando ? 'Editar Alumno' : 'Nuevo Alumno'}
             </h3>
@@ -182,6 +220,28 @@ const Alumnos = ({
               >
                 {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
               </select>
+
+              {/* Días de la semana */}
+              <div>
+                <p className="text-sm font-bold text-on-surface-variant mb-2">Días que asiste</p>
+                <div className="flex gap-2 flex-wrap">
+                  {DIAS.map(d => (
+                    <button
+                      key={d.num}
+                      type="button"
+                      onClick={() => toggleDia(d.num)}
+                      className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
+                        form.diasElegidos.includes(d.num)
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-surface-container-high text-on-surface-variant'
+                      }`}
+                    >
+                      {d.nombre}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {alumnoEditando && (
                 <select
                   value={form.estado}

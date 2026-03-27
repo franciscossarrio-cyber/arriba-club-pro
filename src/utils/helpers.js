@@ -1,6 +1,6 @@
 // Configuración
 export const DISCIPLINAS = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional'];
-export const HORARIOS = ['18:00', '19:00'];
+export const HORARIOS = ['17:00', '18:00', '19:00', '20:00', '21:00'];
 export const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 export const PRECIOS_DEFAULT = {
