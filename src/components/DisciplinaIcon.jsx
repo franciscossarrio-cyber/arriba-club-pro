@@ -4,55 +4,54 @@
  */
 
 const Futvoley = ({ size }) => (
-  /* Pelota Mikasa VLS300 — azul/amarillo, paneles curvos característicos */
+  /* Pelota Mikasa FT-5 — amarilla con paneles negros pentagonales/hexagonales */
   <svg width={size} height={size} viewBox="0 0 40 40">
     <defs>
-      <clipPath id="mikasa-clip">
-        <circle cx="20" cy="20" r="17"/>
-      </clipPath>
-      <radialGradient id="mikasa-grad" cx="38%" cy="35%" r="60%">
-        <stop offset="0%" stopColor="#1E88E5"/>
-        <stop offset="100%" stopColor="#0D47A1"/>
+      <clipPath id="fv-c"><circle cx="20" cy="20" r="17"/></clipPath>
+      <radialGradient id="fv-g" cx="38%" cy="32%" r="65%">
+        <stop offset="0%"   stopColor="#FFE840"/>
+        <stop offset="100%" stopColor="#F5A800"/>
       </radialGradient>
     </defs>
 
-    {/* Sombra suave */}
-    <circle cx="21" cy="21.5" r="16.5" fill="rgba(0,0,0,0.18)"/>
+    {/* Sombra */}
+    <circle cx="21" cy="21.5" r="16.5" fill="rgba(0,0,0,0.2)"/>
+    {/* Base amarilla */}
+    <circle cx="20" cy="20" r="17" fill="url(#fv-g)"/>
 
-    {/* Base azul con gradiente */}
-    <circle cx="20" cy="20" r="17" fill="url(#mikasa-grad)"/>
-
-    {/* Paneles amarillos Mikasa — clipeados al círculo */}
-    <g clipPath="url(#mikasa-clip)">
-      {/* Panel superior-izquierdo */}
-      <path
-        d="M2,14 C5,5 13,0 22,1 C30,2 37,8 38,17 C31,13 23,13 17,17 C11,21 8,28 10,35 C5,30 1,23 2,14Z"
-        fill="#FFB300"
-      />
-      {/* Panel inferior-derecho */}
-      <path
-        d="M30,28 C28,34 23,38 18,39 C13,40 8,37 5,33 C9,35 15,35 20,32 C25,29 28,23 30,28Z"
-        fill="#FFB300"
-      />
+    {/* Paneles negros — patrón Mikasa FT-5 (pentágono + 6 hexágonos alrededor) */}
+    <g clipPath="url(#fv-c)" fill="#111">
+      {/* Pentágono superior */}
+      <polygon points="20,4  25.2,8  23.2,14  16.8,14  14.8,8"/>
+      {/* Hexágono top-right */}
+      <polygon points="25.2,8  32,6.5  35.5,13.5  31,19.5  23.2,14"/>
+      {/* Hexágono right */}
+      <polygon points="31,19.5  37,22  35,29.5  28.5,31.5  25.5,25  23.2,19.5"/>
+      {/* Hexágono bottom-right */}
+      <polygon points="25.5,25  28,32.5  22,37  16.5,34.5  16.8,27.5"/>
+      {/* Hexágono bottom-left */}
+      <polygon points="9,28.5  15,25.5  16.8,27.5  14.5,35  8,32"/>
+      {/* Hexágono left */}
+      <polygon points="4.5,21.5  10.5,18.5  14.8,22  13,30  7,27.5"/>
+      {/* Hexágono top-left */}
+      <polygon points="14.8,8  16.8,14  10.5,17  5,13  8,6.5"/>
     </g>
 
-    {/* Costuras blancas */}
-    <g clipPath="url(#mikasa-clip)" fill="none" stroke="white" strokeLinecap="round">
-      {/* Costura superior del panel */}
-      <path d="M2,14 C5,5 13,0 22,1 C30,2 37,8 38,17" strokeWidth="1.4"/>
-      {/* Costura inferior del panel */}
-      <path d="M10,35 C8,28 11,21 17,17 C23,13 31,13 38,17" strokeWidth="1.4"/>
-      {/* Cola inferior */}
-      <path d="M10,35 C11,37 14,39 18,39" strokeWidth="1.4"/>
-      {/* Costura derecha */}
-      <path d="M30,28 C32,23 32,17 29,13" strokeWidth="1" opacity="0.6"/>
+    {/* Costuras finas entre paneles */}
+    <g clipPath="url(#fv-c)" fill="none" stroke="#555" strokeWidth="0.35" opacity="0.6">
+      <polygon points="20,4  25.2,8  23.2,14  16.8,14  14.8,8"/>
+      <polygon points="25.2,8  32,6.5  35.5,13.5  31,19.5  23.2,14"/>
+      <polygon points="31,19.5  37,22  35,29.5  28.5,31.5  25.5,25  23.2,19.5"/>
+      <polygon points="25.5,25  28,32.5  22,37  16.5,34.5  16.8,27.5"/>
+      <polygon points="9,28.5  15,25.5  16.8,27.5  14.5,35  8,32"/>
+      <polygon points="4.5,21.5  10.5,18.5  14.8,22  13,30  7,27.5"/>
+      <polygon points="14.8,8  16.8,14  10.5,17  5,13  8,6.5"/>
     </g>
 
     {/* Contorno */}
-    <circle cx="20" cy="20" r="17" fill="none" stroke="#0D47A1" strokeWidth="1"/>
-
-    {/* Reflejo de luz */}
-    <ellipse cx="13" cy="12" rx="5" ry="3" fill="white" opacity="0.2" transform="rotate(-35 13 12)"/>
+    <circle cx="20" cy="20" r="17" fill="none" stroke="#CC8C00" strokeWidth="1.2"/>
+    {/* Reflejo */}
+    <ellipse cx="13" cy="12" rx="5" ry="3" fill="white" opacity="0.22" transform="rotate(-35 13 12)"/>
   </svg>
 );
 
