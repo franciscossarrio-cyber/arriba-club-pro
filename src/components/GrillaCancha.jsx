@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import Icon from './Icon';
+import DisciplinaIcon from './DisciplinaIcon';
+import { DISCIPLINAS } from '../utils/helpers';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -128,7 +130,9 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, onClick }) => {
       </div>
       {/* Footer */}
       <div className="flex items-center justify-between">
-        <span className={`text-[9px] font-bold uppercase ${styles.text} opacity-70`}>{styles.label}</span>
+        <span className={`text-[9px] font-bold uppercase ${styles.text} opacity-70`}>
+          {slot?.disciplina ? slot.disciplina.split(' ')[0] : styles.label}
+        </span>
         <span className={`text-[10px] font-black ${ids.length >= 8 ? 'text-error' : styles.text}`}>
           {ids.length}/8
         </span>
@@ -147,6 +151,7 @@ const EditModal = ({
 }) => {
   const [search, setSearch] = useState('');
   const [tipo, setTipo] = useState(slot?.tipo || 'membresia');
+  const [disciplina, setDisciplina] = useState(slot?.disciplina || 'Futvoley');
   const ids = slot?.alumnos || [];
 
   const disponibles = alumnos.filter(a =>
@@ -173,14 +178,38 @@ const EditModal = ({
         {/* Header */}
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h3 className="font-black text-on-surface text-lg">
-              {CANCHAS.find(c => c.id === canchaId)?.label}
-            </h3>
-            <p className="text-sm text-on-surface-variant">{fecha} · {horario}</p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-black text-on-surface text-lg">
+                {CANCHAS.find(c => c.id === canchaId)?.label}
+              </h3>
+              <DisciplinaIcon disciplina={disciplina} size={20} />
+            </div>
+            <p className="text-sm text-on-surface-variant">{fecha} · {horario} · {disciplina}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-surface-container transition-colors">
             <Icon name="close" size={20} />
           </button>
+        </div>
+
+        {/* Disciplina */}
+        <div className="mb-4">
+          <label className="text-xs font-bold text-outline uppercase mb-2 block">Disciplina</label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {DISCIPLINAS.map(d => (
+              <button
+                key={d}
+                onClick={() => { setDisciplina(d); onCrearSlot(canchaId, fecha, horario, tipo, d); }}
+                className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl text-[10px] font-bold transition-all border-2 ${
+                  disciplina === d
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-transparent bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                }`}
+              >
+                <DisciplinaIcon disciplina={d} size={22} />
+                <span className="leading-tight text-center">{d}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tipo */}
@@ -190,7 +219,7 @@ const EditModal = ({
             {Object.entries(TIPO_STYLES).map(([key, s]) => (
               <button
                 key={key}
-                onClick={() => { setTipo(key); onCrearSlot(canchaId, fecha, horario, key); }}
+                onClick={() => { setTipo(key); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
                 className={`py-2 rounded-xl text-xs font-bold transition-all border-2 ${
                   tipo === key ? `${s.bg} border-current ${s.text}` : 'border-transparent bg-surface-container text-on-surface-variant'
                 }`}
@@ -549,7 +578,7 @@ const GrillaCancha = ({
           onClose={closeModal}
           onAgregar={async (...a) => { await onAgregar(...a); }}
           onRemover={async (...a) => { await onRemover(...a); }}
-          onCrearSlot={async (cId, f, h, tipo) => { await onCrearSlot(cId, f, h, { tipo }); }}
+          onCrearSlot={async (cId, f, h, tipo, disc) => { await onCrearSlot(cId, f, h, { tipo, disciplina: disc }); }}
           onRegistrarAsistencia={onRegistrarAsistencia}
           syncing={syncing}
         />
