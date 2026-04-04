@@ -1,9 +1,12 @@
 import Icon from './Icon';
+import { TIPOS_MEMBRESIA } from '../utils/helpers';
 
 const Configuracion = ({
   disciplinaActiva,
   precios,
-  onUpdatePrecios
+  onUpdatePrecios,
+  preciosTipos = {},
+  onUpdatePrecioTipo,
 }) => {
   const handlePrecioChange = (plan, frecuencia, valor) => {
     onUpdatePrecios(disciplinaActiva, plan, frecuencia, parseInt(valor) || 0);
@@ -56,6 +59,27 @@ const Configuracion = ({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Tipos de Membresía */}
+      <div>
+        <h2 className="text-lg font-bold text-on-surface mb-3">Tipos de Membresía</h2>
+        <div className="space-y-3">
+          {TIPOS_MEMBRESIA.map(tipo => (
+            <div key={tipo} className="rounded-2xl p-4 border-2 border-outline/10 bg-surface-container-low flex items-center justify-between gap-4">
+              <span className="font-medium text-on-surface text-sm">{tipo}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-on-surface-variant font-medium">$</span>
+                <input
+                  type="number"
+                  value={preciosTipos[disciplinaActiva]?.[tipo] ?? ''}
+                  onChange={(e) => onUpdatePrecioTipo(disciplinaActiva, tipo, e.target.value)}
+                  className="w-32 px-3 py-2 bg-surface-container-lowest border-2 border-transparent rounded-xl focus:border-primary text-right"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="bg-success/10 rounded-2xl p-4 flex items-center gap-3">

@@ -81,8 +81,9 @@ const Clases = ({
       .map(a => a.id);
   }, [slotFirestore, fechaSeleccionada, alumnosDisciplina, horarioActivo, anio]);
 
+  const claveSlot = `${fechaSeleccionada}|${horarioActivo}`;
   const cambiosTurno = alumnosEnSlot.filter(
-    id => asistencias[id]?.[fechaSeleccionada] === 'cambio_turno'
+    id => asistencias[id]?.[claveSlot] === 'cambio_turno'
   ).length;
   const cuposOcupados = alumnosEnSlot.length - cambiosTurno;
   const cuposLibres = CUPO_MAX - cuposOcupados;
@@ -290,7 +291,7 @@ const Clases = ({
               <div className="divide-y divide-surface-container">
                 {alumnosEnSlot.map(alumnoId => {
                   const alumno = alumnos.find(a => a.id === alumnoId);
-                  const estado = asistencias[alumnoId]?.[fechaSeleccionada];
+                  const estado = asistencias[alumnoId]?.[claveSlot];
 
                   return (
                     <div

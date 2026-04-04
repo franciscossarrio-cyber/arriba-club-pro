@@ -2,11 +2,11 @@ import Icon from './Icon';
 
 const BottomNav = ({ seccionActiva, setSeccionActiva }) => {
   const navItems = [
-    { id: 'dashboard', icon: 'dashboard', label: 'Home' },
-    { id: 'alumnos', icon: 'group', label: 'Alumnos' },
-    { id: 'clases', icon: 'fact_check', label: 'Clases' },
-    { id: 'canchas', icon: 'grid_view', label: 'Canchas' },
-    { id: 'pagos', icon: 'payments', label: 'Pagos' },
+    { id: 'alumnos',  icon: 'group',       label: 'Alumnos'  },
+    { id: 'clases',   icon: 'fact_check',  label: 'Clases'   },
+    { id: 'canchas',  icon: 'grid_view',   label: 'Canchas'  },
+    { id: 'pagos',    icon: 'payments',    label: 'Pagos'    },
+    { id: 'dashboard',icon: 'dashboard',   label: 'Home'     },
   ];
 
   return (

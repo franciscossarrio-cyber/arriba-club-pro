@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Icon from './Icon';
-import { HORARIOS } from '../utils/helpers';
+import { HORARIOS, TIPOS_MEMBRESIA } from '../utils/helpers';
 
 // Días de la semana con su número JS (getDay())
 const DIAS = [
@@ -12,30 +12,46 @@ const DIAS = [
   { nombre: 'Sáb', num: 6 },
 ];
 
+const DISCIPLINAS_FORM = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional', 'Gimnasio'];
+
 const ALUMNO_VACIO = {
   nombre: '',
+  apodo: '',
   telefono: '',
+  instagram: '',
+  fechaNacimiento: '',
   plan: 'Arena Basic',
   frecuencia: '2x sem',
   horario: '18:00',
   diasElegidos: [],
+  disciplinas: [],
+  tipoMembresia: '',
+  referidoPor: '',
   estado: 'Activo',
 };
 
 const Alumnos = ({
   disciplinaActiva,
   alumnosFiltrados,
+  todosLosAlumnos = [],
+  clasesDisponiblesMap = {},
   busqueda,
   setBusqueda,
   horarioFiltro,
   setHorarioFiltro,
+  membresiaFiltro,
+  setMembresiaFiltro,
+  planFiltro,
+  setPlanFiltro,
   onGuardarAlumno,
   onEditarAlumno,
+  onEliminarAlumno,
   syncing
 }) => {
   const [mostrarForm, setMostrarForm] = useState(false);
   const [alumnoEditando, setAlumnoEditando] = useState(null);
   const [form, setForm] = useState(ALUMNO_VACIO);
+  const [eliminandoId, setEliminandoId] = useState(null);
 
   const abrirNuevo = () => {
     setAlumnoEditando(null);
@@ -47,11 +63,17 @@ const Alumnos = ({
     setAlumnoEditando(alumno);
     setForm({
       nombre: alumno.nombre || '',
+      apodo: alumno.apodo || '',
       telefono: alumno.telefono || '',
+      instagram: alumno.instagram || '',
+      fechaNacimiento: alumno.fechaNacimiento || '',
+      tipoMembresia: alumno.tipoMembresia || '',
       plan: alumno.plan || 'Arena Basic',
       frecuencia: alumno.frecuencia || '2x sem',
       horario: alumno.horario || '18:00',
       diasElegidos: alumno.diasElegidos || [],
+      disciplinas: alumno.disciplinas || [],
+      referidoPor: alumno.referidoPor || '',
       estado: alumno.estado || 'Activo',
     });
     setMostrarForm(true);
@@ -69,6 +91,15 @@ const Alumnos = ({
       diasElegidos: prev.diasElegidos.includes(num)
         ? prev.diasElegidos.filter(d => d !== num)
         : [...prev.diasElegidos, num],
+    }));
+  };
+
+  const toggleDisciplina = (disc) => {
+    setForm(prev => ({
+      ...prev,
+      disciplinas: prev.disciplinas.includes(disc)
+        ? prev.disciplinas.filter(d => d !== disc)
+        : [...prev.disciplinas, disc],
     }));
   };
 
@@ -118,6 +149,24 @@ const Alumnos = ({
           <option value="todos">Todos los horarios</option>
           {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
         </select>
+        <select
+          value={membresiaFiltro}
+          onChange={(e) => setMembresiaFiltro(e.target.value)}
+          className="px-4 py-3 bg-surface-container-lowest border-2 border-transparent rounded-2xl font-medium"
+        >
+          <option value="todos">Todas las membresías</option>
+          {TIPOS_MEMBRESIA.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select
+          value={planFiltro}
+          onChange={(e) => setPlanFiltro(e.target.value)}
+          className="px-4 py-3 bg-surface-container-lowest border-2 border-transparent rounded-2xl font-medium"
+        >
+          <option value="todos">Todos los planes</option>
+          <option value="Arena Basic">Arena Basic</option>
+          <option value="Arena Plus">Arena Plus</option>
+          <option value="Arena Premium">Arena Premium</option>
+        </select>
       </div>
 
       {/* Students Grid */}
@@ -127,7 +176,12 @@ const Alumnos = ({
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="font-bold text-on-surface">{alumno.nombre}</h3>
-                {alumno.apodos?.length > 0 && <p className="text-sm text-on-surface-variant">"{alumno.apodos[0]}"</p>}
+                {alumno.apodo && <p className="text-sm text-on-surface-variant">"{alumno.apodo}"</p>}
+                {alumno.tipoMembresia && (
+                  <span className="inline-block mt-1 px-2 py-0.5 bg-primary/10 text-primary text-[11px] font-bold rounded-full">
+                    {alumno.tipoMembresia}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full ${alumno.estado === 'Activo' ? 'bg-success/10 text-success' : 'bg-outline/10 text-outline'}`}>
@@ -139,6 +193,12 @@ const Alumnos = ({
                 >
                   <Icon name="edit" size={16} />
                 </button>
+                <button
+                  onClick={() => setEliminandoId(alumno.id)}
+                  className="p-1.5 hover:bg-error/10 rounded-lg text-error/50 hover:text-error transition-colors"
+                >
+                  <Icon name="delete" size={16} />
+                </button>
               </div>
             </div>
             <div className="space-y-3">
@@ -146,6 +206,24 @@ const Alumnos = ({
                 <div className="flex items-center gap-2 text-sm text-on-surface-variant">
                   <Icon name="call" size={16} className="text-primary" />
                   <span>{alumno.telefono}</span>
+                </div>
+              )}
+              {alumno.instagram && (
+                <div className="flex items-center gap-2 text-sm text-on-surface-variant">
+                  <Icon name="alternate_email" size={16} className="text-primary" />
+                  <span>{alumno.instagram}</span>
+                </div>
+              )}
+              {alumno.fechaNacimiento && (
+                <div className="flex items-center gap-2 text-sm text-on-surface-variant">
+                  <Icon name="cake" size={16} className="text-primary" />
+                  <span>{new Date(alumno.fechaNacimiento + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                </div>
+              )}
+              {alumno.referidoPor && (
+                <div className="flex items-center gap-2 text-sm text-on-surface-variant">
+                  <Icon name="person" size={16} className="text-primary" />
+                  <span>Ref: {alumno.referidoPor}</span>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
@@ -168,7 +246,50 @@ const Alumnos = ({
                   ))}
                 </div>
               )}
+              {/* Balance de clases clásicas */}
+              {clasesDisponiblesMap[alumno.id] && (() => {
+                const { total, consumidas, restantes, extras } = clasesDisponiblesMap[alumno.id];
+                const pct = total > 0 ? Math.min((consumidas / total) * 100, 100) : 0;
+                const color = extras > 0 ? 'bg-error' : restantes === 0 ? 'bg-error' : restantes <= 1 ? 'bg-warning' : 'bg-success';
+                const textColor = extras > 0 ? 'text-error' : restantes === 0 ? 'text-error' : restantes <= 1 ? 'text-warning' : 'text-success';
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-outline font-bold uppercase">Clases clásicas</span>
+                      {extras > 0
+                        ? <span className="text-[11px] font-black text-error">+{extras} extra{extras > 1 ? 's' : ''}</span>
+                        : <span className={`text-[11px] font-black ${textColor}`}>{restantes} / {total} restantes</span>
+                      }
+                    </div>
+                    <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
+
+            {/* Confirmación de eliminación */}
+            {eliminandoId === alumno.id && (
+              <div className="mt-3 pt-3 border-t border-error/20 flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-error">¿Eliminar a {alumno.nombre.split(' ')[0]}?</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEliminandoId(null)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container text-on-surface-variant"
+                  >
+                    No
+                  </button>
+                  <button
+                    onClick={() => { onEliminarAlumno(alumno.id); setEliminandoId(null); }}
+                    disabled={syncing}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-error text-white disabled:opacity-50"
+                  >
+                    Sí, eliminar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -189,30 +310,105 @@ const Alumnos = ({
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
               />
               <input
+                type="text"
+                value={form.apodo}
+                onChange={(e) => setForm({ ...form, apodo: e.target.value })}
+                placeholder="Apodo (opcional)"
+                className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
+              />
+              <input
                 type="tel"
                 value={form.telefono}
                 onChange={(e) => setForm({ ...form, telefono: e.target.value })}
                 placeholder="Teléfono"
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
               />
+              <input
+                type="text"
+                value={form.instagram}
+                onChange={(e) => setForm({ ...form, instagram: e.target.value })}
+                placeholder="Instagram (sin @)"
+                className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
+              />
+              <div>
+                <p className="text-sm font-bold text-on-surface-variant mb-2">Fecha de nacimiento</p>
+                <input
+                  type="date"
+                  value={form.fechaNacimiento}
+                  onChange={(e) => setForm({ ...form, fechaNacimiento: e.target.value })}
+                  className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
+                />
+              </div>
+
+              {/* Tipo de membresía */}
               <select
-                value={form.plan}
-                onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                value={form.tipoMembresia}
+                onChange={(e) => setForm({ ...form, tipoMembresia: e.target.value })}
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
-                <option>Arena Basic</option>
-                <option>Arena Plus</option>
-                <option>Arena Premium</option>
+                <option value="">Tipo de membresía (opcional)</option>
+                {TIPOS_MEMBRESIA.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+
+              {/* Disciplinas */}
+              <div>
+                <p className="text-sm font-bold text-on-surface-variant mb-2">Disciplinas</p>
+                <div className="flex gap-2 flex-wrap">
+                  {DISCIPLINAS_FORM.map(disc => (
+                    <button
+                      key={disc}
+                      type="button"
+                      onClick={() => toggleDisciplina(disc)}
+                      className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
+                        form.disciplinas.includes(disc)
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-surface-container-high text-on-surface-variant'
+                      }`}
+                    >
+                      {disc}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Referido por */}
               <select
-                value={form.frecuencia}
-                onChange={(e) => setForm({ ...form, frecuencia: e.target.value })}
+                value={form.referidoPor}
+                onChange={(e) => setForm({ ...form, referidoPor: e.target.value })}
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
               >
-                <option value="1x sem">1x semana</option>
-                <option value="2x sem">2x semana</option>
-                <option value="3x sem">3x semana</option>
+                <option value="">Referido por... (opcional)</option>
+                {todosLosAlumnos
+                  .filter(a => !alumnoEditando || a.id !== alumnoEditando.id)
+                  .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                  .map(a => (
+                    <option key={a.id} value={a.nombre}>{a.nombre}</option>
+                  ))
+                }
               </select>
+
+              {['Membresía mensual', 'Clases privadas'].includes(form.tipoMembresia) && (
+                <>
+                  <select
+                    value={form.plan}
+                    onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                    className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
+                  >
+                    <option>Arena Basic</option>
+                    <option>Arena Plus</option>
+                    <option>Arena Premium</option>
+                  </select>
+                  <select
+                    value={form.frecuencia}
+                    onChange={(e) => setForm({ ...form, frecuencia: e.target.value })}
+                    className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl"
+                  >
+                    <option value="1x sem">1x semana</option>
+                    <option value="2x sem">2x semana</option>
+                    <option value="3x sem">3x semana</option>
+                  </select>
+                </>
+              )}
               <select
                 value={form.horario}
                 onChange={(e) => setForm({ ...form, horario: e.target.value })}

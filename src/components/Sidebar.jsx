@@ -19,13 +19,13 @@ const Sidebar = ({
   syncing
 }) => {
   const navItems = [
-    { id: 'dashboard',     icon: 'dashboard',   label: 'Dashboard'    },
     { id: 'alumnos',       icon: 'group',        label: 'Alumnos'      },
     { id: 'clases',        icon: 'fact_check',   label: 'Clases'       },
     { id: 'canchas',       icon: 'grid_view',    label: 'Canchas'      },
     { id: 'pagos',         icon: 'payments',     label: 'Pagos'        },
     { id: 'profesores',    icon: 'sports',       label: 'Profesores'   },
     { id: 'configuracion', icon: 'settings',     label: 'Configuración'},
+    { id: 'dashboard',     icon: 'dashboard',    label: 'Dashboard'    },
   ];
 
   const colores = DISCIPLINA_COLORS[disciplinaActiva] || DISCIPLINA_COLORS['Futvoley'];

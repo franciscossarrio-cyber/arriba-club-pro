@@ -1,6 +1,14 @@
 // Configuración
 export const DISCIPLINAS = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional'];
 export const HORARIOS = ['17:00', '18:00', '19:00', '20:00', '21:00'];
+export const TIPOS_MEMBRESIA = ['Membresía mensual', 'Clases privadas', 'Clases sueltas', 'Clase de prueba'];
+export const PRECIOS_TIPOS_DEFAULT = {
+  'Futvoley':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Beach Tennis': { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Beach Volley': { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Funcional':    { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Gimnasio':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+};
 export const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 export const PRECIOS_DEFAULT = {
@@ -60,6 +68,22 @@ export const getWhatsAppLink = (alumno, mesActual, preciosDisciplina) => {
     `Hola ${alumno.nombre.split(' ')[0]}! Te escribo de Arriba Club. Queríamos recordarte que tenés pendiente el pago de ${mesActual} (${monto}). Cualquier duda avisanos!`
   );
   return `https://wa.me/${telefono}?text=${mensaje}`;
+};
+
+/**
+ * Cuenta cuántos días del mes caen en los días elegidos por el alumno.
+ * @param {number[]} diasElegidos — ej: [1,3] para Lun y Mié (getDay())
+ * @param {number} mes — 1-12
+ * @param {number} anio
+ */
+export const getClasesDelMes = (diasElegidos, mes, anio) => {
+  if (!diasElegidos?.length) return 0;
+  const ultimo = new Date(anio, mes, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= ultimo; d++) {
+    if (diasElegidos.includes(new Date(anio, mes - 1, d).getDay())) count++;
+  }
+  return count;
 };
 
 // Todas las fechas "dd/mm" de un mes

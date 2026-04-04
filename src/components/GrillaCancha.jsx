@@ -16,11 +16,13 @@ const CANCHAS = [
 ];
 
 const TIPO_STYLES = {
-  membresia: { bg: 'bg-blue-50  border-blue-200',  badge: 'bg-blue-500',   text: 'text-blue-700',   label: 'Membresía'  },
-  privada:   { bg: 'bg-violet-50 border-violet-200', badge: 'bg-violet-500', text: 'text-violet-700', label: 'Privada'    },
-  suelta:    { bg: 'bg-amber-50  border-amber-200',  badge: 'bg-amber-500',  text: 'text-amber-700',  label: 'Suelta'     },
-  day_use:   { bg: 'bg-green-50  border-green-200',  badge: 'bg-green-500',  text: 'text-green-700',  label: 'Day Use'    },
+  clasica: { bg: 'bg-blue-50   border-blue-200',   badge: 'bg-blue-500',   text: 'text-blue-700',   label: 'Clásica'  },
+  privada: { bg: 'bg-violet-50 border-violet-200', badge: 'bg-violet-500', text: 'text-violet-700', label: 'Privada'  },
+  dayuse:  { bg: 'bg-green-50  border-green-200',  badge: 'bg-green-500',  text: 'text-green-700',  label: 'Day Use'  },
 };
+
+// Mapea tipos legacy al nuevo esquema
+const normTipo = t => (t === 'membresia' || t === 'suelta') ? 'clasica' : (t === 'day_use' ? 'dayuse' : t);
 
 // Colores de asistencia — igual que en el Excel:
 // Verde = vino y pagó | Rojo = no vino | Azul = vino sin pagar | Ámbar = canceló
@@ -84,10 +86,14 @@ function offsetSemana(fecha, offset, mesNum, anio) {
 
 // ─── Celda de slot con colores de asistencia ──────────────────────────────────
 
-const SlotCell = ({ slot, alumnosMap, asistencias, fecha, onClick }) => {
+const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick }) => {
   const ids = slot?.alumnos || [];
-  const tipo = slot?.tipo || 'membresia';
-  const styles = TIPO_STYLES[tipo] || TIPO_STYLES.membresia;
+  const tipo = normTipo(slot?.tipo || 'clasica');
+  const styles = TIPO_STYLES[tipo] || TIPO_STYLES.clasica;
+  const clave = `${fecha}|${horario}`;
+  const confirmados = ids.filter(id => asistencias?.[id]?.[clave] === 'asistio').length;
+  const cancelados = ids.filter(id => asistencias?.[id]?.[clave] === 'cambio_turno').length;
+  const efectivos = ids.length - cancelados; // para límite de cupo
 
   if (ids.length === 0) {
     return (
@@ -111,7 +117,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, onClick }) => {
       <div className="flex flex-wrap gap-[2px] mb-1">
         {ids.slice(0, 7).map(id => {
           const nombre = alumnosMap[id]?.nombre?.split(' ')[0] || '?';
-          const estado = asistencias?.[id]?.[fecha];
+          const estado = asistencias?.[id]?.[clave];
           const asist = ASIST[estado];
           return (
             <span
@@ -136,9 +142,13 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, onClick }) => {
             {slot?.disciplina ? slot.disciplina.split(' ')[0] : styles.label}
           </span>
         </div>
-        <span className={`text-[10px] font-black ${ids.length >= 8 ? 'text-error' : styles.text}`}>
-          {ids.length}/8
-        </span>
+        {tipo === 'dayuse' ? (
+          <span className={`text-[10px] font-black ${styles.text}`}>{ids.length}</span>
+        ) : (
+          <span className={`text-[10px] font-black ${efectivos >= 8 ? 'text-error' : styles.text}`}>
+            {confirmados}/8
+          </span>
+        )}
       </div>
     </button>
   );
@@ -153,9 +163,13 @@ const EditModal = ({
   syncing,
 }) => {
   const [search, setSearch] = useState('');
-  const [tipo, setTipo] = useState(slot?.tipo || 'membresia');
+  const [tipo, setTipo] = useState(normTipo(slot?.tipo || 'clasica'));
   const [disciplina, setDisciplina] = useState(slot?.disciplina || 'Futvoley');
   const ids = slot?.alumnos || [];
+  const clave = `${fecha}|${horario}`;
+  const confirmados = ids.filter(id => asistencias?.[id]?.[clave] === 'asistio').length;
+  const cancelados = ids.filter(id => asistencias?.[id]?.[clave] === 'cambio_turno').length;
+  const efectivos = ids.length - cancelados; // para límite de cupo
 
   const disponibles = alumnos.filter(a =>
     !ids.includes(a.id) &&
@@ -163,10 +177,10 @@ const EditModal = ({
      a.apodos?.some(ap => ap.toLowerCase().includes(search.toLowerCase())))
   );
 
-  const styles = TIPO_STYLES[tipo] || TIPO_STYLES.membresia;
+  const styles = TIPO_STYLES[tipo] || TIPO_STYLES.clasica;
 
   const estadoBotones = [
-    { key: 'asistio',      label: 'Vino ✓',       cls: 'bg-green-500 text-white', clsOff: 'hover:bg-green-50 hover:text-green-700' },
+    { key: 'asistio',      label: 'Viene',         cls: 'bg-green-500 text-white', clsOff: 'hover:bg-green-50 hover:text-green-700' },
     { key: 'falto',        label: 'No vino',       cls: 'bg-red-500 text-white',   clsOff: 'hover:bg-red-50 hover:text-red-700'   },
     { key: 'vino_no_pago', label: 'Vino sin $',    cls: 'bg-blue-500 text-white',  clsOff: 'hover:bg-blue-50 hover:text-blue-700' },
     { key: 'cambio_turno', label: 'Canceló',       cls: 'bg-amber-500 text-white', clsOff: 'hover:bg-amber-50 hover:text-amber-700' },
@@ -218,7 +232,7 @@ const EditModal = ({
         {/* Tipo */}
         <div className="mb-4">
           <label className="text-xs font-bold text-outline uppercase mb-2 block">Tipo de clase</label>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
             {Object.entries(TIPO_STYLES).map(([key, s]) => (
               <button
                 key={key}
@@ -237,9 +251,15 @@ const EditModal = ({
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-bold text-outline uppercase">Alumnos · asistencia</label>
-            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
-              ids.length >= 8 ? 'bg-error/10 text-error' : 'bg-surface-container text-on-surface-variant'
-            }`}>{ids.length}/8</span>
+            {tipo === 'dayuse' ? (
+              <span className="text-xs font-black px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                {ids.length} · sin límite
+              </span>
+            ) : (
+              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                confirmados >= 8 ? 'bg-error/10 text-error' : 'bg-surface-container text-on-surface-variant'
+              }`}>{confirmados}/8{cancelados > 0 && <span className="text-amber-500 ml-1">({cancelados} cancel.)</span>}</span>
+            )}
           </div>
 
           {ids.length === 0 ? (
@@ -248,7 +268,7 @@ const EditModal = ({
             <div className="space-y-1.5">
               {ids.map(id => {
                 const alumno = alumnosMap[id];
-                const estado = asistencias?.[id]?.[fecha];
+                const estado = asistencias?.[id]?.[clave];
                 const as = ASIST[estado];
                 return (
                   <div key={id} className="bg-surface-container rounded-xl p-2">
@@ -295,7 +315,7 @@ const EditModal = ({
         </div>
 
         {/* Agregar alumno */}
-        {ids.length < 8 && (
+        {(tipo === 'dayuse' || efectivos < 8) && (
           <div>
             <label className="text-xs font-bold text-outline uppercase mb-2 block">Agregar alumno</label>
             <div className="relative mb-2">
@@ -312,7 +332,7 @@ const EditModal = ({
               {disponibles.slice(0, 8).map(a => (
                 <button
                   key={a.id}
-                  onClick={() => { onAgregar(canchaId, fecha, horario, a.id); setSearch(''); }}
+                  onClick={() => { onAgregar(canchaId, fecha, horario, a.id, tipo); setSearch(''); }}
                   disabled={syncing}
                   className="w-full text-left px-3 py-2 bg-surface-container-high hover:bg-primary/10 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
                 >
@@ -382,13 +402,49 @@ const GrillaCancha = ({
   );
 
   // Slots del día indexados por "canchaId|horario"
+  // Fusiona slots de Firestore con alumnos de membresía derivados de diasElegidos
   const slotsDia = useMemo(() => {
     const map = {};
+
+    // 1. Slots guardados en Firestore
     ocupacion
       .filter(s => s.fecha === fechaSeleccionada)
       .forEach(s => { map[`${s.canchaId}|${s.horario}`] = s; });
+
+    // 2. Alumnos activos con membresía cuyo día/horario coincide → siempre en cancha3
+    // Se mezclan sobre el slot de Firestore si existe, salvo que el alumno esté en `removidos`.
+    const [dd, mm] = fechaSeleccionada.split('/').map(Number);
+    const dow = new Date(anio, mm - 1, dd).getDay();
+    alumnos
+      .filter(a => a.estado === 'Activo' && a.diasElegidos?.includes(dow) && a.horario)
+      .forEach(a => {
+        const key = `cancha3|${a.horario}`;
+        if (map[key]) {
+          // Slot de Firestore existe: agregar solo si no fue removido explícitamente
+          const removidos = map[key].removidos || [];
+          if (removidos.includes(a.id)) return;
+          const existentes = map[key].alumnos || [];
+          if (!existentes.includes(a.id))
+            map[key] = { ...map[key], alumnos: [...existentes, a.id] };
+        } else {
+          // Sin slot en Firestore: crear slot derivado
+          if (!map[key]) {
+            map[key] = {
+              canchaId: 'cancha3',
+              fecha: fechaSeleccionada,
+              horario: a.horario,
+              alumnos: [],
+              tipo: 'membresia',
+              disciplina: a.disciplinas?.[0] || 'Futvoley',
+            };
+          }
+          if (!map[key].alumnos.includes(a.id))
+            map[key].alumnos.push(a.id);
+        }
+      });
+
     return map;
-  }, [ocupacion, fechaSeleccionada]);
+  }, [ocupacion, fechaSeleccionada, alumnos, anio]);
 
   // Horarios a mostrar — puede ser todos o solo los que tienen actividad
   const horariosVisibles = useMemo(() => {
@@ -456,8 +512,12 @@ const GrillaCancha = ({
               })();
               const seleccionado = fecha === fechaSeleccionada;
 
-              // ¿Tiene algún slot ese día?
-              const tieneDatos = ocupacion.some(s => s.fecha === fecha);
+              // ¿Tiene algún slot ese día? (Firestore o membresía derivada)
+              const tieneDatos = enMes && (ocupacion.some(s => s.fecha === fecha) || (() => {
+                const [dd2, mm2] = fecha.split('/').map(Number);
+                const dow2 = new Date(anio, mm2 - 1, dd2).getDay();
+                return alumnos.some(a => a.estado === 'Activo' && a.diasElegidos?.includes(dow2) && a.horario);
+              })());
 
               return (
                 <button
@@ -533,6 +593,7 @@ const GrillaCancha = ({
                     alumnosMap={alumnosMap}
                     asistencias={asistencias}
                     fecha={fechaSeleccionada}
+                    horario={horario}
                     onClick={() => openModal(c.id, horario)}
                   />
                 ))}

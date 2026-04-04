@@ -280,7 +280,12 @@ export async function agregarAlumnoASlot(canchaId, fecha, horario, alumnoId) {
  */
 export async function removerAlumnoDeSlot(canchaId, fecha, horario, alumnoId) {
   const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
-  await updateDoc(ref, { alumnos: arrayRemove(alumnoId) });
+  // Guarda en `removidos` para que la derivación de diasElegidos no lo vuelva a agregar
+  await setDoc(
+    ref,
+    { alumnos: arrayRemove(alumnoId), removidos: arrayUnion(alumnoId) },
+    { merge: true },
+  );
 }
 
 /**
