@@ -149,32 +149,32 @@ const Shop = () => {
   };
 
   const buildArcaPayload = ({ neto, ivaTotal, total }) => {
-    // Agrupar IVA por alícuota
+    // Agrupar IVA por alícuota para el array Iva
     const ivaMap = {};
     items.forEach(({ precio, cantidad, iva }) => {
       const sub  = precio * cantidad;
       const rate = iva / 100;
       const n    = sub / (1 + rate);
       if (!ivaMap[iva]) ivaMap[iva] = { Id: ivaIdMap(iva), BaseImp: 0, Importe: 0 };
-      ivaMap[iva].BaseImp  += n;
-      ivaMap[iva].Importe  += sub - n;
+      ivaMap[iva].BaseImp += n;
+      ivaMap[iva].Importe += sub - n;
     });
 
     return {
-      PtoVta:    arcaForm.ptoVta || 1,
-      CbteTipo:  11, // Factura C (consumidor final / monotributista)
-      Concepto:  1,  // Productos
-      DocTipo:   clienteForm.tipoDoc,
-      DocNro:    clienteForm.tipoDoc === 99 ? 0 : (parseInt(clienteForm.docNum.replace(/\D/g, '')) || 0),
-      CbteFch:   new Date().toISOString().slice(0, 10).replace(/-/g, ''),
-      ImpTotal:  parseFloat(total.toFixed(2)),
-      ImpNeto:   parseFloat(neto.toFixed(2)),
-      ImpIVA:    parseFloat(ivaTotal.toFixed(2)),
+      PtoVta:     arcaForm.ptoVta || 1,
+      CbteTipo:   6, // Factura B — Responsable Inscripto a Consumidor Final
+      Concepto:   1,
+      DocTipo:    clienteForm.tipoDoc,
+      DocNro:     clienteForm.tipoDoc === 99 ? 0 : (parseInt(clienteForm.docNum.replace(/\D/g, '')) || 0),
+      CbteFch:    new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+      ImpTotal:   parseFloat(total.toFixed(2)),
+      ImpNeto:    parseFloat(neto.toFixed(2)),
+      ImpIVA:     parseFloat(ivaTotal.toFixed(2)),
       ImpTotConc: 0,
-      ImpOpEx:   0,
-      ImpTrib:   0,
-      MonId:     'PES',
-      MonCotiz:  1,
+      ImpOpEx:    0,
+      ImpTrib:    0,
+      MonId:      'PES',
+      MonCotiz:   1,
       Iva: Object.values(ivaMap).map(v => ({
         ...v,
         BaseImp: parseFloat(v.BaseImp.toFixed(2)),
