@@ -32,3 +32,12 @@ Thumbs.db
 
 # Local
 *.local
+
+# Firebase
+.firebase/
+
+# Cloud Functions dependencies
+functions/node_modules/
+
+# Claude Code local config
+.claude/

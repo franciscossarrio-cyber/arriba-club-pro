@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Icon from './Icon';
+import logoSrc from '../assets/logo.png';
 
 const ACCESS_KEY = import.meta.env.VITE_ACCESS_KEY || 'arriba2026';
 
@@ -35,8 +36,8 @@ const Login = ({ onLogin }) => {
       <main className="relative z-10 w-full max-w-[440px] px-6 fade-in">
         {/* Logo */}
         <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-2xl flex items-center justify-center mb-6 shadow-2xl shadow-primary/20">
-            <Icon name="sports_tennis" filled className="text-white text-3xl" />
+          <div className="mb-6">
+            <img src={logoSrc} alt="Arriba Club Pro" className="h-20 w-auto object-contain" />
           </div>
           <h1 className="text-3xl font-black text-on-surface tracking-tighter mb-1">Arriba Club Pro</h1>
           <p className="text-sm font-medium text-on-surface-variant tracking-widest uppercase opacity-70">Beach Sports Mgmt</p>

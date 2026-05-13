@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Icon from './Icon';
-import { HORARIOS, formatMonto } from '../utils/helpers';
+import { DISCIPLINAS, DISC_COLORS, HORARIOS, formatMonto } from '../utils/helpers';
 
 const Profesores = ({
   disciplinaActiva,
@@ -15,13 +15,13 @@ const Profesores = ({
   syncing
 }) => {
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [nuevoProfe, setNuevoProfe] = useState({ nombre: '', cbu: '' });
+  const [nuevoProfe, setNuevoProfe] = useState({ nombre: '', cbu: '', disciplina: '' });
 
   const handleGuardar = () => {
     if (nuevoProfe.nombre) {
       onGuardarProfe(nuevoProfe);
       setMostrarForm(false);
-      setNuevoProfe({ nombre: '', cbu: '' });
+      setNuevoProfe({ nombre: '', cbu: '', disciplina: '' });
     }
   };
 
@@ -56,6 +56,11 @@ const Profesores = ({
               <div>
                 <h3 className="font-bold text-on-surface">{profe.nombre}</h3>
                 <p className="text-sm text-on-surface-variant">{profe.cbu || 'Sin CBU'}</p>
+                {profe.disciplina && (
+                  <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border mt-2 bg-primary/10 border-primary/30 text-primary">
+                    {profe.disciplina}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => onEliminarProfe(profe.id)}
@@ -89,38 +94,6 @@ const Profesores = ({
         )}
       </div>
 
-      {/* Class Assignment */}
-      <div className="bg-surface-container-lowest rounded-3xl p-6">
-        <h3 className="font-bold text-on-surface mb-4 flex items-center gap-2">
-          <Icon name="calendar_month" className="text-primary" size={20} />
-          Asignación de Clases
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {fechasClase.map(fecha => (
-            <div key={fecha} className="bg-surface-container-low rounded-xl p-3">
-              <p className="font-bold text-on-surface mb-3 text-center border-b border-surface-container pb-2">{fecha}</p>
-              <div className="space-y-2">
-                {HORARIOS.map(horario => (
-                  <div key={`${fecha}-${horario}`} className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-on-surface-variant w-12">{horario}</span>
-                    <select
-                      value={clasesPorProfe[`${disciplinaActiva}-${fecha}-${horario}`] || ''}
-                      onChange={(e) => onAsignarClase(fecha, horario, e.target.value)}
-                      className="flex-1 px-2 py-1.5 bg-surface-container-lowest border border-surface-container rounded-lg text-xs"
-                    >
-                      <option value="">--</option>
-                      {profesores.filter(p => p.estado === 'Activo').map(p => (
-                        <option key={p.id} value={p.id}>{p.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* New Professor Modal */}
       {mostrarForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarForm(false)}>
@@ -141,6 +114,28 @@ const Profesores = ({
                 placeholder="CBU / Alias"
                 className="w-full px-4 py-3 bg-surface-container-high border-2 border-transparent rounded-xl focus:border-primary"
               />
+              <div>
+                <p className="text-[11px] font-bold text-outline uppercase tracking-wider mb-2">Disciplina</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {DISCIPLINAS.map(d => {
+                    const activo = nuevoProfe.disciplina === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setNuevoProfe(p => ({ ...p, disciplina: activo ? '' : d }))}
+                        className={`py-2 px-3 rounded-xl text-sm font-bold transition-all border-2 ${
+                          activo
+                            ? 'bg-primary/10 border-primary/30 text-primary'
+                            : 'bg-surface-container border-transparent text-on-surface-variant hover:bg-surface-container-high'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setMostrarForm(false)} className="flex-1 py-3 bg-surface-container-high rounded-xl font-medium text-on-surface-variant">

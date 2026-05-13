@@ -1,11 +1,8 @@
 /**
  * useFirestore.js — Hook de acceso a Firestore
  *
- * Reemplaza a useApi.js. Expone todas las funciones de firestore.js
- * envueltas con manejo de estado loading/error.
- *
- * Uso:
- *   const { getAlumnos, addPago, loading, error, clearError } = useFirestore();
+ * Expone todas las funciones de firestore.js envueltas con manejo de
+ * estado loading/error.
  */
 
 import { useState, useCallback, useMemo } from 'react';
@@ -17,10 +14,6 @@ export const useFirestore = () => {
 
   const clearError = useCallback(() => setError(null), []);
 
-  /**
-   * Envuelve una función async de Firestore con manejo de loading/error.
-   * Devuelve una nueva función que, al llamarse, gestiona el estado automáticamente.
-   */
   const wrap = useCallback(
     (fn) =>
       async (...args) => {
@@ -39,115 +32,102 @@ export const useFirestore = () => {
     [],
   );
 
-  // Funciones estables via useMemo (solo se recrean si `wrap` cambia, que es nunca).
-  // Esto evita que useCallback en los consumidores se dispare en cada render.
   const fns = useMemo(() => ({
     // ── Alumnos ───────────────────────────────────────────────────────────
-    /** @returns {Promise<Array>} lista de alumnos con campo `id` */
     getAlumnos:      wrap(fs.getAlumnos),
-    /** @param {string} id */
     getAlumnoById:   wrap(fs.getAlumnoById),
-    /** @param {Object} data — { nombre, telefono, plan, frecuencia, horario, disciplinas[], tipoClase, diasElegidos[], apodos[], estado } */
     addAlumno:       wrap(fs.addAlumno),
-    /** @param {string} id @param {Object} data */
     updateAlumno:    wrap(fs.updateAlumno),
-    /** @param {string} id */
-    deleteAlumno:    wrap(fs.deleteAlumno),
+    deleteAlumno:          wrap(fs.deleteAlumno),
+    limpiarAlumnoDeClases: wrap(fs.limpiarAlumnoDeClases),
 
     // ── Pagos ─────────────────────────────────────────────────────────────
-    /** @param {string|null} mes — ej: "Marzo 2026" (null = todos) */
-    getPagos:        wrap(fs.getPagos),
-    /** @param {string} id */
-    getPagoById:     wrap(fs.getPagoById),
-    /** @param {Object} data — { alumnoId, nombre, mes, monto, estado, metodo, disciplina, tipoClase, fecha, horario } */
-    addPago:         wrap(fs.addPago),
-    /** @param {string} id @param {Object} data */
-    updatePago:      wrap(fs.updatePago),
-    /** @param {string} id */
-    deletePago:      wrap(fs.deletePago),
+    getPagos:                  wrap(fs.getPagos),
+    getPagoById:               wrap(fs.getPagoById),
+    addPago:                   wrap(fs.addPago),
+    updatePago:                wrap(fs.updatePago),
+    deletePago:                wrap(fs.deletePago),
+    getPagosSueltaPendientes:  wrap(fs.getPagosSueltaPendientes),
 
-    // ── Asistencias ───────────────────────────────────────────────────────
+    // ── Asistencias (subcol de clases) ────────────────────────────────────
     /** @param {string|null} mes */
-    getAsistencias:      wrap(fs.getAsistencias),
-    /** @param {Object} data — { alumnoId, fecha, horario, disciplina, estado, mes } */
-    addAsistencia:       wrap(fs.addAsistencia),
+    getAsistencias:     wrap(fs.getAsistencias),
     /**
-     * Batch insert de asistencias (usa writeBatch internamente).
+     * Upsert de asistencia individual.
+     * @param {string} canchaId
+     * @param {string} fecha     — "dd/mm"
+     * @param {string} horario
+     * @param {string} alumnoId
+     * @param {Object} data      — { estado, mes }
+     */
+    setAsistencia:      wrap(fs.setAsistencia),
+    /**
+     * Elimina la asistencia de un alumno en una clase.
+     * @param {string} canchaId
+     * @param {string} fecha    — "dd/mm"
+     * @param {string} horario
+     * @param {string} alumnoId
+     */
+    removeAsistencia:   wrap(fs.removeAsistencia),
+    /**
+     * Carga masiva — items: [{ canchaId, fecha, horario, alumnoId, estado, mes }]
      * @param {Array<Object>} items
      */
-    addAsistenciasLote:  wrap(fs.addAsistenciasLote),
-    /** @param {string} alumnoId @param {string} fecha — "dd/mm/aaaa" */
-    removeAsistencia:    wrap(fs.removeAsistencia),
-    /** @param {string} id @param {Object} data */
-    updateAsistencia:    wrap(fs.updateAsistencia),
+    addAsistenciasLote: wrap(fs.addAsistenciasLote),
 
-    // ── Ocupación Cancha ──────────────────────────────────────────────────
-    /**
-     * Devuelve el slot de una cancha.
-     * @param {string} canchaId @param {string} fecha @param {string} horario
-     */
-    getSlot:             wrap(fs.getSlot),
+    // ── Clases ────────────────────────────────────────────────────────────
+    /** @param {string} canchaId @param {string} fecha @param {string} horario */
+    getClase:              wrap(fs.getClase),
     /** @param {string} mes */
-    getOcupacionMes:     wrap(fs.getOcupacionMes),
+    getClasesMes:          wrap(fs.getClasesMes),
     /**
      * @param {string} canchaId @param {string} fecha @param {string} horario
-     * @param {Object} data — { mes, disciplina, alumnos[], tipo }
+     * @param {Object} data — { mes, disciplina, alumnos[], tipo, profesorId? }
      */
-    setSlot:             wrap(fs.setSlot),
+    setClase:              wrap(fs.setClase),
     /** @param {string} canchaId @param {string} fecha @param {string} horario @param {string} alumnoId */
-    agregarAlumnoASlot:  wrap(fs.agregarAlumnoASlot),
+    agregarAlumnoAClase:   wrap(fs.agregarAlumnoAClase),
     /** @param {string} canchaId @param {string} fecha @param {string} horario @param {string} alumnoId */
-    removerAlumnoDeSlot: wrap(fs.removerAlumnoDeSlot),
+    removerAlumnoDeClase:  wrap(fs.removerAlumnoDeClase),
     /**
-     * Llena todos los cupos de membresía del mes para un alumno (writeBatch).
+     * Asigna o quita un profesor de una clase.
+     * @param {string}      canchaId
+     * @param {string}      fecha
+     * @param {string}      horario
+     * @param {string|null} profesorId
+     * @param {string}      mes
+     */
+    setClaseProfesorId:    wrap(fs.setClaseProfesorId),
+    /**
+     * Llena cupos del mes para un alumno con membresía.
      * @param {string}   alumnoId
-     * @param {number[]} diasElegidos — 0=Dom, 1=Lun … 6=Sáb
+     * @param {number[]} diasElegidos
      * @param {string}   horario
-     * @param {number}   mes — 1-12
+     * @param {number}   mes
      * @param {number}   anio
      * @param {string}   [disciplina]
      */
-    llenarCuposMembresia: wrap(fs.llenarCuposMembresia),
+    llenarCuposMembresia:  wrap(fs.llenarCuposMembresia),
 
     // ── Cambios de Turno ──────────────────────────────────────────────────
-    /** @param {string|null} mes */
     getCambiosTurno:   wrap(fs.getCambiosTurno),
-    /** @param {Object} data — { alumnoId, fechaOriginal, horarioOriginal, fechaNueva, horarioNuevo, disciplina, mes } */
     addCambioTurno:    wrap(fs.addCambioTurno),
-    /** @param {string} id @param {Object} data — { estado: 'aprobado'|'rechazado' } */
     updateCambioTurno: wrap(fs.updateCambioTurno),
-    /** @param {string} id */
     deleteCambioTurno: wrap(fs.deleteCambioTurno),
 
-    // ── Profesores ────────────────────────────────────────────────────────
-    /** @returns {Promise<Array>} lista de profesores */
-    getProfesores:   wrap(fs.getProfesores),
-    /** @param {string} id */
-    getProfesorById: wrap(fs.getProfesorById),
-    /** @param {Object} data — { nombre, cbu, estado } */
-    addProfesor:     wrap(fs.addProfesor),
-    /** @param {string} id @param {Object} data */
-    updateProfesor:  wrap(fs.updateProfesor),
-    /** @param {string} id */
-    deleteProfesor:  wrap(fs.deleteProfesor),
+    // ── Config ────────────────────────────────────────────────────────────
+    getConfig: wrap(fs.getConfig),
+    setConfig: wrap(fs.setConfig),
 
-    // ── Clases Profe ──────────────────────────────────────────────────────
-    /** @param {string|null} mes */
-    getClasesProfe: wrap(fs.getClasesProfe),
-    /**
-     * @param {string}      disciplina
-     * @param {string}      fecha     — "dd/mm"
-     * @param {string}      horario   — "18:00"
-     * @param {string|null} profesorId — null para eliminar asignación
-     * @param {string}      [mes]
-     */
-    setClaseProfe:  wrap(fs.setClaseProfe),
-    /** @param {string} disciplina @param {string} fecha @param {string} horario */
-    deleteClaseProfe: wrap(fs.deleteClaseProfe),
+    // ── Profesores ────────────────────────────────────────────────────────
+    getProfesores:   wrap(fs.getProfesores),
+    getProfesorById: wrap(fs.getProfesorById),
+    addProfesor:     wrap(fs.addProfesor),
+    updateProfesor:  wrap(fs.updateProfesor),
+    deleteProfesor:  wrap(fs.deleteProfesor),
   }), [wrap]);
 
   return {
-    // ── Estado ────────────────────────────────────────────────────────────
     loading,
     error,
     clearError,

@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 
 // ─────────────────────────────────────────────────────────────
 // Completá estas variables en tu archivo .env local.
@@ -19,5 +20,8 @@ const app = initializeApp(firebaseConfig);
 
 /** Instancia de Firestore lista para importar */
 export const db = getFirestore(app);
+
+/** Instancia de Cloud Functions lista para importar */
+export const functions = getFunctions(app, 'us-central1');
 
 export default app;

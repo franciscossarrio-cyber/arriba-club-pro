@@ -1,7 +1,15 @@
 // Configuración
 export const DISCIPLINAS = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional'];
+
+const _DC = { bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', ring: 'ring-primary' };
+export const DISC_COLORS = {
+  'Futvoley':     _DC,
+  'Beach Tennis': _DC,
+  'Beach Volley': _DC,
+  'Funcional':    _DC,
+};
 export const HORARIOS = ['17:00', '18:00', '19:00', '20:00', '21:00'];
-export const TIPOS_MEMBRESIA = ['Membresía mensual', 'Clases privadas', 'Clases sueltas', 'Clase de prueba'];
+export const TIPOS_MEMBRESIA = ['Membresía mensual', 'Clases privadas', 'Clases sueltas', 'Clase de prueba', 'Day Use'];
 export const PRECIOS_TIPOS_DEFAULT = {
   'Futvoley':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
   'Beach Tennis': { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
@@ -105,6 +113,21 @@ export const buscarAlumno = (texto, alumnos) => {
     a.apodos?.some(ap => ap.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(t)) ||
     a.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(t)
   );
+};
+
+// Descarga un array como CSV (con BOM para Excel/Sheets)
+export const downloadCSV = (headers, rows, filename) => {
+  const BOM = '﻿';
+  const csv = BOM + [headers, ...rows]
+    .map(r => r.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 };
 
 // Storage helpers

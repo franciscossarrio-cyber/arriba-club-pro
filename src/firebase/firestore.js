@@ -4,15 +4,15 @@
  * Colecciones:
  *   alumnos          — estudiantes del club
  *   pagos            — pagos mensuales
- *   asistencias      — registros de asistencia
- *   ocupacion_cancha — slots de cancha por fecha/horario (ID: "{canchaId}-{fecha}-{horario}")
+ *   clases           — slots de clase por cancha/fecha/horario (ID: "{canchaId}-{fecha_}-{horario}")
+ *   clases/{id}/asistencias/{alumnoId} — asistencia de cada alumno a una clase
  *   cambios_turno    — solicitudes de cambio de horario
  *   profesores       — profesores del club
- *   clases_profe     — asignación profe↔clase (ID: "{disciplina}-{fecha}-{horario}")
  */
 
 import {
   collection,
+  collectionGroup,
   doc,
   addDoc,
   setDoc,
@@ -22,7 +22,6 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   serverTimestamp,
   writeBatch,
   arrayUnion,
@@ -48,7 +47,7 @@ const snapToArray = (snapshot) =>
  */
 function getFechasDelMes(diasElegidos, mes, anio) {
   const fechas = [];
-  const ultimo = new Date(anio, mes, 0).getDate(); // último día del mes
+  const ultimo = new Date(anio, mes, 0).getDate();
   for (let d = 1; d <= ultimo; d++) {
     const fecha = new Date(anio, mes - 1, d);
     if (diasElegidos.includes(fecha.getDay())) {
@@ -59,6 +58,11 @@ function getFechasDelMes(diasElegidos, mes, anio) {
   }
   return fechas;
 }
+
+/** ID de clase: "{canchaId}-{fecha_}-{horario}" (ej: "cancha3-15_04-18:00")
+ *  La fecha usa _ en vez de / porque Firestore trata / como separador de ruta. */
+const claseId = (canchaId, fecha, horario) =>
+  `${canchaId}-${fecha.replace('/', '_')}-${horario}`;
 
 // ─── ALUMNOS ─────────────────────────────────────────────────────────────────
 
@@ -101,11 +105,26 @@ export async function deleteAlumno(id) {
   await deleteDoc(doc(db, 'alumnos', id));
 }
 
+/**
+ * Remueve a un alumno de todos los slots de clases que lo contengan en un mes dado.
+ * Se llama después de deleteAlumno para mantener consistencia.
+ */
+export async function limpiarAlumnoDeClases(alumnoId, mes) {
+  const q = query(
+    collection(db, 'clases'),
+    where('alumnos', 'array-contains', alumnoId),
+    where('mes', '==', mes),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return;
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.update(d.ref, { alumnos: arrayRemove(alumnoId) }));
+  await batch.commit();
+}
+
 // ─── PAGOS ───────────────────────────────────────────────────────────────────
 
-/**
- * Devuelve pagos, opcionalmente filtrados por mes (ej: "Marzo 2026").
- */
+/** Devuelve pagos, opcionalmente filtrados por mes (ej: "Marzo 2026"). */
 export async function getPagos(mes = null) {
   let q = collection(db, 'pagos');
   if (mes) {
@@ -140,122 +159,61 @@ export async function updatePago(id, data) {
   await updateDoc(doc(db, 'pagos', id), data);
 }
 
+/**
+ * Busca pagos pendientes de un tipo dado para un alumno en una fecha/horario dados.
+ */
+export async function getPagosPendientesPorTipo(alumnoId, tipo, fecha, horario) {
+  const q = query(
+    collection(db, 'pagos'),
+    where('alumnoId', '==', alumnoId),
+    where('tipo', '==', tipo),
+    where('estado', '==', 'Pendiente'),
+  );
+  const snap = await getDocs(q);
+  return snapToArray(snap).filter(p => p.fecha === fecha && p.horario === horario);
+}
+
+export const getPagosSueltaPendientes = (alumnoId, fecha, horario) =>
+  getPagosPendientesPorTipo(alumnoId, 'suelta', fecha, horario);
+
 /** Elimina un pago. */
 export async function deletePago(id) {
   await deleteDoc(doc(db, 'pagos', id));
 }
 
-// ─── ASISTENCIAS ─────────────────────────────────────────────────────────────
+// ─── CLASES ──────────────────────────────────────────────────────────────────
+//
+// Cada documento representa una clase física en una cancha/fecha/horario.
+// Los alumnos sin estado (inscriptos) van en el array `alumnos[]`.
+// La asistencia de cada alumno vive en la subcol `asistencias/{alumnoId}`.
 
 /**
- * Devuelve asistencias, opcionalmente filtradas por mes.
- */
-export async function getAsistencias(mes = null) {
-  let q = collection(db, 'asistencias');
-  if (mes) {
-    q = query(q, where('mes', '==', mes));
-  }
-  const snap = await getDocs(q);
-  return snapToArray(snap);
-}
-
-/**
- * Agrega una asistencia individual.
- * @param {Object} data — { alumnoId, fecha, horario, disciplina, estado, mes }
- */
-export async function addAsistencia(data) {
-  const ref = await addDoc(collection(db, 'asistencias'), {
-    ...data,
-    estado: data.estado || 'asistio',
-    creadoEn: serverTimestamp(),
-  });
-  return ref.id;
-}
-
-/**
- * Agrega múltiples asistencias en un solo batch (límite Firestore: 500 ops).
- * @param {Array<Object>} items — array de { alumnoId, fecha, horario, disciplina, estado, mes }
- */
-export async function addAsistenciasLote(items) {
-  if (!items || items.length === 0) return;
-
-  // Firestore permite máximo 500 operaciones por batch
-  const CHUNK = 500;
-  for (let i = 0; i < items.length; i += CHUNK) {
-    const batch = writeBatch(db);
-    items.slice(i, i + CHUNK).forEach((item) => {
-      const ref = doc(collection(db, 'asistencias'));
-      batch.set(ref, {
-        ...item,
-        estado: item.estado || 'asistio',
-        creadoEn: serverTimestamp(),
-      });
-    });
-    await batch.commit();
-  }
-}
-
-/**
- * Elimina una asistencia por alumnoId + fecha (+ horario opcional).
- * Borra todos los docs que coincidan.
- */
-export async function removeAsistencia(alumnoId, fecha, horario = null) {
-  let q = query(
-    collection(db, 'asistencias'),
-    where('alumnoId', '==', alumnoId),
-    where('fecha', '==', fecha),
-  );
-  if (horario) {
-    q = query(q, where('horario', '==', horario));
-  }
-  const snap = await getDocs(q);
-  if (snap.empty) return;
-  const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
-}
-
-/** Actualiza campos de una asistencia. */
-export async function updateAsistencia(id, data) {
-  await updateDoc(doc(db, 'asistencias', id), data);
-}
-
-// ─── OCUPACION CANCHA ────────────────────────────────────────────────────────
-
-/** ID de slot: "{canchaId}-{fecha}-{horario}" (ej: "cancha3-15_03-18:00")
- *  La fecha usa _ en vez de / porque Firestore trata / como separador de ruta. */
-const slotId = (canchaId, fecha, horario) =>
-  `${canchaId}-${fecha.replace('/', '_')}-${horario}`;
-
-/**
- * Devuelve el slot de una cancha en una fecha y horario.
+ * Devuelve la clase de una cancha en una fecha y horario.
  * Retorna null si no existe.
  */
-export async function getSlot(canchaId, fecha, horario) {
+export async function getClase(canchaId, fecha, horario) {
   const snap = await getDoc(
-    doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario)),
+    doc(db, 'clases', claseId(canchaId, fecha, horario)),
   );
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-/**
- * Devuelve todos los slots de un mes dado.
- */
-export async function getOcupacionMes(mes) {
-  const q = query(collection(db, 'ocupacion_cancha'), where('mes', '==', mes));
+/** Devuelve todas las clases de un mes dado. */
+export async function getClasesMes(mes) {
+  const q = query(collection(db, 'clases'), where('mes', '==', mes));
   const snap = await getDocs(q);
   return snapToArray(snap);
 }
 
 /**
- * Crea o actualiza un slot (merge).
+ * Crea o actualiza una clase (merge).
  * @param {string} canchaId
- * @param {string} fecha — "dd/mm"
- * @param {string} horario — "18:00"
- * @param {Object} data — { mes, disciplina, alumnos[], tipo }
+ * @param {string} fecha     — "dd/mm"
+ * @param {string} horario   — "18:00"
+ * @param {Object} data      — { mes, disciplina, alumnos[], tipo, profesorId? }
  */
-export async function setSlot(canchaId, fecha, horario, data) {
-  const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
+export async function setClase(canchaId, fecha, horario, data) {
+  const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
   await setDoc(
     ref,
     { canchaId, fecha, horario, ...data, creadoEn: serverTimestamp() },
@@ -264,10 +222,10 @@ export async function setSlot(canchaId, fecha, horario, data) {
 }
 
 /**
- * Agrega un alumno al array `alumnos` de un slot (crea el slot si no existe).
+ * Agrega un alumno al array `alumnos` de una clase (crea el doc si no existe).
  */
-export async function agregarAlumnoASlot(canchaId, fecha, horario, alumnoId) {
-  const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
+export async function agregarAlumnoAClase(canchaId, fecha, horario, alumnoId) {
+  const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
   await setDoc(
     ref,
     { canchaId, fecha, horario, alumnos: arrayUnion(alumnoId), creadoEn: serverTimestamp() },
@@ -276,24 +234,52 @@ export async function agregarAlumnoASlot(canchaId, fecha, horario, alumnoId) {
 }
 
 /**
- * Remueve un alumno del array `alumnos` de un slot.
+ * Remueve un alumno del array `alumnos` de una clase.
  */
-export async function removerAlumnoDeSlot(canchaId, fecha, horario, alumnoId) {
-  const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
-  // Guarda en `removidos` para que la derivación de diasElegidos no lo vuelva a agregar
+export async function removerAlumnoDeClase(canchaId, fecha, horario, alumnoId, mes, currentAlumnos = []) {
+  const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
+  const snap = await getDoc(ref);
+
+  if (snap.exists()) {
+    await setDoc(
+      ref,
+      { canchaId, fecha, horario, mes, alumnos: arrayRemove(alumnoId), removidos: arrayUnion(alumnoId) },
+      { merge: true },
+    );
+  } else {
+    // Slot virtual: escribimos la lista real sin el alumno
+    const newAlumnos = currentAlumnos.filter(id => id !== alumnoId);
+    await setDoc(ref, {
+      canchaId, fecha, horario, mes,
+      alumnos: newAlumnos,
+      removidos: [alumnoId],
+    });
+  }
+}
+
+/**
+ * Asigna (o quita) un profesor a una clase.
+ * Si la clase no existe aún, la crea con merge.
+ *
+ * @param {string}      canchaId
+ * @param {string}      fecha       — "dd/mm"
+ * @param {string}      horario     — "18:00"
+ * @param {string|null} profesorId  — null para quitar la asignación
+ * @param {string}      mes         — "Marzo 2026"
+ */
+export async function setClaseProfesorId(canchaId, fecha, horario, profesorId, mes = '') {
+  const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
   await setDoc(
     ref,
-    { alumnos: arrayRemove(alumnoId), removidos: arrayUnion(alumnoId) },
+    { canchaId, fecha, horario, mes, profesorId: profesorId || null },
     { merge: true },
   );
 }
 
 /**
  * Llena los cupos de membresía para un alumno en un mes completo.
- *
- * Para cada fecha del mes que coincida con `diasElegidos` (números de día de la
- * semana: 0=Dom, 1=Lun … 6=Sáb), crea/actualiza el slot en `cancha3` agregando
- * al alumno. Usa writeBatch para minimizar round-trips.
+ * Para cada fecha del mes que coincida con `diasElegidos`, agrega al alumno
+ * en la clase correspondiente de cancha3 (sin estado de asistencia).
  *
  * @param {string}   alumnoId
  * @param {number[]} diasElegidos — ej: [1, 3] para Lunes y Miércoles
@@ -314,14 +300,12 @@ export async function llenarCuposMembresia(
   const fechas = getFechasDelMes(diasElegidos, mes, anio);
   if (fechas.length === 0) return [];
 
-  const mesLabel = `${MESES[mes - 1]} ${anio}`; // ej: "Marzo 2026"
+  const mesLabel = `${MESES[mes - 1]} ${anio}`;
   const canchaId = 'cancha3';
 
-  // setDoc con merge: true + arrayUnion por cada fecha (evita problemas de
-  // writeBatch + arrayUnion en Firebase v12)
   await Promise.all(
     fechas.map((fecha) => {
-      const ref = doc(db, 'ocupacion_cancha', slotId(canchaId, fecha, horario));
+      const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
       return setDoc(
         ref,
         {
@@ -342,11 +326,83 @@ export async function llenarCuposMembresia(
   return fechas;
 }
 
-// ─── CAMBIOS DE TURNO ────────────────────────────────────────────────────────
+// ─── ASISTENCIAS (subcol de clases) ──────────────────────────────────────────
+//
+// Ruta: clases/{claseId}/asistencias/{alumnoId}
+// El alumnoId es el ID del documento para hacer upserts O(1).
+// Para leer todo el mes se usa un collection group query.
 
 /**
- * Devuelve cambios de turno, opcionalmente filtrados por mes.
+ * Devuelve todas las asistencias de un mes via collection group.
+ * Se filtra en memoria para evitar requerir un índice compuesto en Firestore.
  */
+export async function getAsistencias(mes = null) {
+  const snap = await getDocs(collectionGroup(db, 'asistencias'));
+  const all = snapToArray(snap);
+  return mes ? all.filter(a => a.mes === mes) : all;
+}
+
+/**
+ * Registra o actualiza la asistencia de un alumno en una clase.
+ *
+ * @param {string} canchaId
+ * @param {string} fecha      — "dd/mm"
+ * @param {string} horario    — "18:00"
+ * @param {string} alumnoId
+ * @param {Object} data       — { estado, mes }
+ */
+export async function setAsistencia(canchaId, fecha, horario, alumnoId, data) {
+  const cId = claseId(canchaId, fecha, horario);
+  const ref = doc(db, 'clases', cId, 'asistencias', alumnoId);
+  await setDoc(
+    ref,
+    { alumnoId, fecha, horario, ...data, registradoEn: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+/**
+ * Elimina la asistencia de un alumno en una clase.
+ *
+ * @param {string} canchaId
+ * @param {string} fecha    — "dd/mm"
+ * @param {string} horario  — "18:00"
+ * @param {string} alumnoId
+ */
+export async function removeAsistencia(canchaId, fecha, horario, alumnoId) {
+  const cId = claseId(canchaId, fecha, horario);
+  await deleteDoc(doc(db, 'clases', cId, 'asistencias', alumnoId));
+}
+
+/**
+ * Carga masiva de asistencias en batch.
+ * @param {Array<Object>} items — [{ canchaId, fecha, horario, alumnoId, estado, mes }]
+ */
+export async function addAsistenciasLote(items) {
+  if (!items || items.length === 0) return;
+
+  const CHUNK = 500;
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    items.slice(i, i + CHUNK).forEach((item) => {
+      const cId = claseId(item.canchaId || 'cancha3', item.fecha, item.horario);
+      const ref = doc(db, 'clases', cId, 'asistencias', item.alumnoId);
+      batch.set(ref, {
+        alumnoId: item.alumnoId,
+        fecha: item.fecha,
+        horario: item.horario,
+        mes: item.mes,
+        estado: item.estado || 'asistio',
+        registradoEn: serverTimestamp(),
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+// ─── CAMBIOS DE TURNO ────────────────────────────────────────────────────────
+
+/** Devuelve cambios de turno, opcionalmente filtrados por mes. */
 export async function getCambiosTurno(mes = null) {
   let q = collection(db, 'cambios_turno');
   if (mes) {
@@ -370,7 +426,7 @@ export async function addCambioTurno(data) {
   return ref.id;
 }
 
-/** Actualiza el estado de un cambio de turno (pendiente | aprobado | rechazado). */
+/** Actualiza el estado de un cambio de turno. */
 export async function updateCambioTurno(id, data) {
   await updateDoc(doc(db, 'cambios_turno', id), data);
 }
@@ -378,6 +434,25 @@ export async function updateCambioTurno(id, data) {
 /** Elimina un cambio de turno. */
 export async function deleteCambioTurno(id) {
   await deleteDoc(doc(db, 'cambios_turno', id));
+}
+
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+
+/**
+ * Devuelve el documento de configuración (precios, preciosTipos, etc.).
+ * Retorna null si no existe.
+ */
+export async function getConfig() {
+  const snap = await getDoc(doc(db, 'config', 'precios'));
+  return snap.exists() ? snap.data() : null;
+}
+
+/**
+ * Guarda (merge) el documento de configuración.
+ * @param {Object} data — puede incluir { precios, preciosTipos }
+ */
+export async function setConfig(data) {
+  await setDoc(doc(db, 'config', 'precios'), data, { merge: true });
 }
 
 // ─── PROFESORES ──────────────────────────────────────────────────────────────
@@ -412,49 +487,71 @@ export async function updateProfesor(id, data) {
   await updateDoc(doc(db, 'profesores', id), data);
 }
 
-/** Elimina un profesor (soft delete recomendado: estado = 'Inactivo'). */
+/** Elimina un profesor. */
 export async function deleteProfesor(id) {
   await deleteDoc(doc(db, 'profesores', id));
 }
 
-// ─── CLASES PROFE ─────────────────────────────────────────────────────────────
+// ─── PRODUCTOS (Shop) ─────────────────────────────────────────────────────────
 
-/** ID de clase: "{disciplina}-{fecha}-{horario}" (fecha usa _ en vez de /) */
-const claseId = (disciplina, fecha, horario) =>
-  `${disciplina}-${fecha.replace('/', '_')}-${horario}`;
-
-/**
- * Devuelve todas las clases asignadas a profes, opcionalmente por mes.
- */
-export async function getClasesProfe(mes = null) {
-  let q = collection(db, 'clases_profe');
-  if (mes) {
-    q = query(q, where('mes', '==', mes));
-  }
-  const snap = await getDocs(q);
+/** Devuelve todos los productos del shop. */
+export async function getProductos() {
+  const snap = await getDocs(query(collection(db, 'productos'), where('estado', '!=', 'eliminado')));
   return snapToArray(snap);
 }
 
-/**
- * Asigna (o reasigna) un profesor a una clase.
- * Si `profesorId` es null elimina la asignación.
- *
- * @param {string} disciplina
- * @param {string} fecha     — "dd/mm"
- * @param {string} horario   — "18:00"
- * @param {string|null} profesorId
- * @param {string} mes       — "Marzo 2026"
- */
-export async function setClaseProfe(disciplina, fecha, horario, profesorId, mes = '') {
-  const ref = doc(db, 'clases_profe', claseId(disciplina, fecha, horario));
-  if (profesorId === null) {
-    await deleteDoc(ref);
-  } else {
-    await setDoc(ref, { disciplina, fecha, horario, profesorId, mes }, { merge: true });
-  }
+/** Agrega un producto. */
+export async function addProducto(data) {
+  const ref = await addDoc(collection(db, 'productos'), {
+    ...data,
+    estado: 'activo',
+    creadoEn: serverTimestamp(),
+  });
+  return ref.id;
 }
 
-/** Elimina la asignación de un profesor a una clase. */
-export async function deleteClaseProfe(disciplina, fecha, horario) {
-  await deleteDoc(doc(db, 'clases_profe', claseId(disciplina, fecha, horario)));
+/** Actualiza campos de un producto. */
+export async function updateProducto(id, data) {
+  await updateDoc(doc(db, 'productos', id), data);
+}
+
+/** Elimina (soft delete) un producto. */
+export async function deleteProducto(id) {
+  await updateDoc(doc(db, 'productos', id), { estado: 'eliminado' });
+}
+
+// ─── FACTURAS (Shop) ──────────────────────────────────────────────────────────
+
+/** Devuelve todas las facturas, ordenadas por fecha desc. */
+export async function getFacturas() {
+  const snap = await getDocs(collection(db, 'facturas'));
+  return snapToArray(snap).sort((a, b) => (b.creadoEn?.seconds || 0) - (a.creadoEn?.seconds || 0));
+}
+
+/** Agrega una factura y devuelve su ID. */
+export async function addFactura(data) {
+  const ref = await addDoc(collection(db, 'facturas'), {
+    ...data,
+    estado: data.estado || 'borrador',
+    creadoEn: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/** Actualiza una factura (ej: marcar como enviada o error). */
+export async function updateFactura(id, data) {
+  await updateDoc(doc(db, 'facturas', id), data);
+}
+
+// ─── CONFIG ARCA ──────────────────────────────────────────────────────────────
+
+/** Devuelve la configuración ARCA guardada. */
+export async function getConfigArca() {
+  const snap = await getDoc(doc(db, 'config', 'arca'));
+  return snap.exists() ? snap.data() : null;
+}
+
+/** Guarda (merge) la configuración ARCA. */
+export async function setConfigArca(data) {
+  await setDoc(doc(db, 'config', 'arca'), data, { merge: true });
 }

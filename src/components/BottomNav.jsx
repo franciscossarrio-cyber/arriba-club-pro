@@ -3,9 +3,9 @@ import Icon from './Icon';
 const BottomNav = ({ seccionActiva, setSeccionActiva }) => {
   const navItems = [
     { id: 'alumnos',  icon: 'group',       label: 'Alumnos'  },
-    { id: 'clases',   icon: 'fact_check',  label: 'Clases'   },
     { id: 'canchas',  icon: 'grid_view',   label: 'Canchas'  },
     { id: 'pagos',    icon: 'payments',    label: 'Pagos'    },
+    { id: 'shop',     icon: 'storefront',  label: 'Shop'     },
     { id: 'dashboard',icon: 'dashboard',   label: 'Home'     },
   ];
 

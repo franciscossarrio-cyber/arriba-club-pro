@@ -36,7 +36,7 @@ const Clases = ({
   // Todas las fechas del mes donde algún alumno tiene clase en horarioActivo
   const fechasDelHorario = useMemo(() => {
     const alumnosHorario = alumnosDisciplina.filter(
-      a => a.estado === 'Activo' && a.horario === horarioActivo && a.diasElegidos?.length > 0
+      a => a.estado === 'Activo' && a.horario === horarioActivo && a.diasElegidos?.length > 0 && a.tipoMembresia !== 'Clases sueltas'
     );
     const diasActivos = new Set(alumnosHorario.flatMap(a => a.diasElegidos));
     if (diasActivos.size === 0) return [];
@@ -67,16 +67,21 @@ const Clases = ({
   // Alumnos del slot: usa Firestore si hay datos, sino deriva de diasElegidos
   const alumnosEnSlot = useMemo(() => {
     if (!fechaSeleccionada) return [];
-    if (slotFirestore?.alumnos?.length > 0) return slotFirestore.alumnos;
+    const alumnosIdSet = new Set(alumnos.map(a => a.id));
+    if (slotFirestore?.alumnos?.length > 0) {
+      return slotFirestore.alumnos.filter(id => alumnosIdSet.has(id));
+    }
 
     // Fallback: alumnos activos con horario+día coincidente
+    // Excluye alumnos de clase suelta (no tienen cupo fijo en slots)
     const [dd, mm] = fechaSeleccionada.split('/').map(Number);
     const diaSemana = new Date(anio, mm - 1, dd).getDay();
     return alumnosDisciplina
       .filter(a =>
         a.estado === 'Activo' &&
         a.horario === horarioActivo &&
-        a.diasElegidos?.includes(diaSemana)
+        a.diasElegidos?.includes(diaSemana) &&
+        a.tipoMembresia !== 'Clases sueltas'
       )
       .map(a => a.id);
   }, [slotFirestore, fechaSeleccionada, alumnosDisciplina, horarioActivo, anio]);
@@ -107,7 +112,8 @@ const Clases = ({
       alumnoId,
       fechaSeleccionada,
       horarioActivo,
-      estadoActual === nuevoEstado ? null : nuevoEstado
+      estadoActual === nuevoEstado ? null : nuevoEstado,
+      'cancha3'
     );
   };
 

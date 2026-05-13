@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // Components
 import Login from './components/Login';
@@ -6,18 +6,18 @@ import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import Dashboard from './components/Dashboard';
 import Alumnos from './components/Alumnos';
-import Clases from './components/Clases';
 import Pagos from './components/Pagos';
 import Profesores from './components/Profesores';
 import Configuracion from './components/Configuracion';
 import GrillaCancha from './components/GrillaCancha';
+import Shop from './components/Shop';
 import Icon from './components/Icon';
-import DisciplinaIcon from './components/DisciplinaIcon';
 
 // Hooks & Utils
 import { useFirestore } from './hooks/useFirestore';
 import {
   DISCIPLINAS,
+  DISC_COLORS,
   HORARIOS,
   MESES,
   PRECIOS_DEFAULT,
@@ -29,10 +29,14 @@ import {
   getClasesDelMes,
   formatMonto,
   buscarAlumno,
+  downloadCSV,
   storage
 } from './utils/helpers';
 
 function App() {
+  // Guard para evitar deudas duplicadas en clicks rápidos concurrentes
+  const deudaEnVuelo = useRef(new Set());
+
   // Auth
   const [autenticado, setAutenticado] = useState(() => storage.get('auth') === true);
 
@@ -45,7 +49,7 @@ function App() {
   const [alumnos, setAlumnos] = useState([]);
   const [pagos, setPagos] = useState([]);
   const [asistencias, setAsistencias] = useState({});   // { alumnoId: { 'dd/mm|HH:mm': estado } }
-  const [ocupacion, setOcupacion] = useState([]);        // docs de ocupacion_cancha
+  const [ocupacion, setOcupacion] = useState([]);        // docs de la colección 'clases'
   const [profesores, setProfesores] = useState(() => storage.get('profesores') || []);
   const [clasesPorProfe, setClasesPorProfe] = useState(() => storage.get('clases_profe') || {});
   const [precios, setPrecios] = useState(() => storage.get('precios') || PRECIOS_DEFAULT);
@@ -54,36 +58,42 @@ function App() {
   // UI State
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [vistaGrilla, setVistaGrilla] = useState('dia'); // 'dia' | 'semana'
   const [busqueda, setBusqueda] = useState('');
   const [horarioFiltro, setHorarioFiltro] = useState('todos');
   const [membresiaFiltro, setMembresiaFiltro] = useState('todos');
   const [planFiltro, setPlanFiltro] = useState('todos');
   const [error, setError] = useState(null);
+  const [exportModal, setExportModal] = useState(false);
 
   // Firestore
   const {
     getAlumnos,
     getPagos,
     getAsistencias,
-    getOcupacionMes,
+    getClasesMes,
     getProfesores,
-    getClasesProfe,
     addAlumno,
     updateAlumno,
     deleteAlumno,
+    limpiarAlumnoDeClases,
     addPago,
     updatePago,
     deletePago,
-    addAsistencia,
+    getPagosSueltaPendientes,
+    getPagosPendientesPorTipo,
+    setAsistencia,
     addAsistenciasLote,
     removeAsistencia,
-    setClaseProfe,
+    setClaseProfesorId,
     addProfesor,
     deleteProfesor,
     llenarCuposMembresia,
-    agregarAlumnoASlot,
-    removerAlumnoDeSlot,
-    setSlot,
+    agregarAlumnoAClase,
+    removerAlumnoDeClase,
+    setClase,
+    getConfig,
+    setConfig,
   } = useFirestore();
 
   // Computed
@@ -93,8 +103,7 @@ function App() {
   // Effects — persistir en localStorage
   useEffect(() => { storage.set('seccion', seccionActiva); }, [seccionActiva]);
   useEffect(() => { storage.set('disciplina', disciplinaActiva); }, [disciplinaActiva]);
-  useEffect(() => { storage.set('precios', precios); }, [precios]);
-  useEffect(() => { storage.set('preciosTipos', preciosTipos); }, [preciosTipos]);
+  // precios y preciosTipos se persisten en Firestore (sync entre dispositivos)
   useEffect(() => { if (profesores.length > 0) storage.set('profesores', profesores); }, [profesores]);
   useEffect(() => { if (Object.keys(clasesPorProfe).length > 0) storage.set('clases_profe', clasesPorProfe); }, [clasesPorProfe]);
 
@@ -103,16 +112,16 @@ function App() {
   const handleLogout = () => { setAutenticado(false); storage.remove('auth'); };
 
   // ── Carga de datos ─────────────────────────────────────────────────────────
-  const cargarDatos = useCallback(async () => {
+  const cargarDatos = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
-      const [alumnosData, pagosData, asistData, ocupData, profesData, clasesProfeData] = await Promise.all([
+      if (!silent) setLoading(true);
+      const [alumnosData, pagosData, asistData, clasesData, profesData, configData] = await Promise.all([
         getAlumnos(),
         getPagos(mesActual),
-        getAsistencias(mesActual),
-        getOcupacionMes(mesActual).catch(() => []),
+        getAsistencias(mesActual).catch(() => []),
+        getClasesMes(mesActual).catch(() => []),
         getProfesores().catch(() => []),
-        getClasesProfe(mesActual).catch(() => []),
+        getConfig().catch(() => null),
       ]);
 
       setAlumnos(alumnosData.map(a => ({
@@ -128,32 +137,53 @@ function App() {
       const asistPorAlumno = {};
       asistData.forEach(a => {
         if (!asistPorAlumno[a.alumnoId]) asistPorAlumno[a.alumnoId] = {};
-        const fechaCorta = a.fecha ? a.fecha.substring(0, 5) : '';
-        const clave = fechaCorta && a.horario ? `${fechaCorta}|${a.horario}` : fechaCorta;
+        const clave = a.fecha && a.horario ? `${a.fecha}|${a.horario}` : a.fecha;
         if (clave) asistPorAlumno[a.alumnoId][clave] = a.estado || 'asistio';
       });
       setAsistencias(asistPorAlumno);
 
-      setOcupacion(ocupData);
+      // Los slots de Firestore se cargan tal cual.
+      // Los suelta agregados manualmente sí aparecen en la grilla para marcar asistencia.
+      // Lo que se filtra (en GrillaCancha y Clases) son los slots VIRTUALES derivados de diasElegidos.
+      setOcupacion(clasesData);
+
+      if (configData) {
+        if (configData.precios) setPrecios(configData.precios);
+        if (configData.preciosTipos) setPreciosTipos(configData.preciosTipos);
+      } else {
+        // Migración: si hay valores en localStorage los subimos a Firestore
+        const localPrecios     = storage.get('precios');
+        const localPreciosTipos = storage.get('preciosTipos');
+        if (localPrecios || localPreciosTipos) {
+          setConfig({
+            ...(localPrecios      ? { precios: localPrecios }           : {}),
+            ...(localPreciosTipos ? { preciosTipos: localPreciosTipos } : {}),
+          }).catch(() => {});
+        }
+      }
 
       if (profesData.length > 0) {
         setProfesores(profesData);
         storage.set('profesores', profesData);
       }
 
-      if (clasesProfeData.length > 0) {
-        const clasesObj = clasesProfeData.reduce(
-          (acc, c) => ({ ...acc, [c.id]: c.profesorId }), {},
-        );
+      // Construir clasesPorProfe desde los documentos de clases (campo profesorId)
+      const clasesObj = clasesData.reduce((acc, c) => {
+        if (c.profesorId && c.disciplina && c.fecha && c.horario) {
+          return { ...acc, [`${c.disciplina}-${c.fecha}-${c.horario}`]: c.profesorId };
+        }
+        return acc;
+      }, {});
+      if (Object.keys(clasesObj).length > 0) {
         setClasesPorProfe(clasesObj);
         storage.set('clases_profe', clasesObj);
       }
     } catch (err) {
       setError('Error de conexión');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [getAlumnos, getPagos, getAsistencias, getOcupacionMes, getProfesores, getClasesProfe, mesActual]);
+  }, [getAlumnos, getPagos, getAsistencias, getClasesMes, getProfesores, getConfig, mesActual]);
 
   useEffect(() => {
     if (autenticado) cargarDatos();
@@ -179,45 +209,8 @@ function App() {
   // Pagos suelta/dayuse/privada/prueba con estado Pendiente en Firestore
   const pagosPendientesFirestore = pagosDisciplina.filter(p => p.estado === 'Pendiente');
 
-  // Detectar alumnos de "Clases sueltas" en slots que aún no tienen pago registrado
-  const alumnosSueltasIds = new Set(
-    alumnosActivos.filter(a => a.tipoMembresia === 'Clases sueltas').map(a => a.id)
-  );
-  const sueltasCubiertasSet = new Set(
-    pagosDisciplina
-      .filter(p => p.tipo === 'suelta' && ['Pagado', 'Pendiente'].includes(p.estado))
-      .map(p => `${p.alumnoId}|${p.fecha}|${p.horario}`)
-  );
-  const sueltasVirtualesMap = new Map(); // key: alumnoId|fecha|horario → dedup por cancha
-  ocupacion
-    .filter(slot =>
-      (slot.disciplina === disciplinaActiva || (!slot.disciplina && disciplinaActiva === 'Futvoley')) &&
-      (slot.tipo === 'clasica' || slot.tipo === 'membresia' || slot.tipo === 'suelta' || !slot.tipo)
-    )
-    .forEach(slot => {
-      (slot.alumnos || [])
-        .filter(id => alumnosSueltasIds.has(id))
-        .forEach(alumnoId => {
-          const fechaCompleta = `${slot.fecha}/${anio}`;
-          const key = `${alumnoId}|${fechaCompleta}|${slot.horario}`;
-          if (!sueltasCubiertasSet.has(key) && !sueltasVirtualesMap.has(key)) {
-            const alumno = alumnosActivos.find(a => a.id === alumnoId);
-            sueltasVirtualesMap.set(key, {
-              id: `virtual_${alumnoId}_${slot.fecha}_${slot.horario}`,
-              alumnoId,
-              nombre: alumno?.nombre || '',
-              tipo: 'suelta',
-              estado: 'Pendiente',
-              monto: preciosTiposActivos['Clases sueltas'] || 0,
-              fecha: fechaCompleta,
-              horario: slot.horario,
-              disciplina: disciplinaActiva,
-              virtual: true,
-            });
-          }
-        });
-    });
-  const sueltasVirtuales = Array.from(sueltasVirtualesMap.values());
+  // Las deudas de suelta se generan desde handleRegistrarAsistencia (no desde slots de cancha)
+  const sueltasVirtuales = [];
 
   // Créditos de clases clásicas por alumno (solo aplica a alumnos con diasElegidos)
   const clasesDisponiblesMap = {};
@@ -321,7 +314,7 @@ function App() {
     setSyncing(true);
     try {
       await addAlumno({ ...nuevoAlumno, disciplinas: nuevoAlumno.disciplinas || [disciplinaActiva] });
-      await cargarDatos();
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al guardar');
     } finally {
@@ -334,7 +327,7 @@ function App() {
     try {
       const { id, creadoEn, ...data } = alumno;
       await updateAlumno(id, data);
-      await cargarDatos();
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al editar alumno');
     } finally {
@@ -346,7 +339,8 @@ function App() {
     setSyncing(true);
     try {
       await deleteAlumno(id);
-      await cargarDatos();
+      await limpiarAlumnoDeClases(id, mesActual).catch(() => {});
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al eliminar alumno');
     } finally {
@@ -357,8 +351,8 @@ function App() {
   const handleGuardarProfe = async (nuevoProfe) => {
     setSyncing(true);
     try {
-      await addProfesor({ nombre: nuevoProfe.nombre, cbu: nuevoProfe.cbu });
-      await cargarDatos();
+      await addProfesor({ nombre: nuevoProfe.nombre, cbu: nuevoProfe.cbu, disciplina: nuevoProfe.disciplina || '' });
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al guardar profesor');
     } finally {
@@ -371,7 +365,7 @@ function App() {
       setSyncing(true);
       try {
         await deleteProfesor(profeId);
-        await cargarDatos();
+        await cargarDatos(true);
       } catch (err) {
         setError('Error al eliminar profesor');
       } finally {
@@ -384,33 +378,48 @@ function App() {
     const key = `${disciplinaActiva}-${fecha}-${horario}`;
     setClasesPorProfe(prev => ({ ...prev, [key]: profeId }));
     try {
-      await setClaseProfe(disciplinaActiva, fecha, horario, profeId, mesActual);
+      const clase = ocupacion.find(
+        c => c.disciplina === disciplinaActiva && c.fecha === fecha && c.horario === horario
+      );
+      const canchaId = clase?.canchaId || 'cancha3';
+      await setClaseProfesorId(canchaId, fecha, horario, profeId || null, mesActual);
     } catch (err) {
       setError('Error al asignar clase');
     }
   };
 
+  // Asignar profesor desde la grilla de canchas (conoce canchaId y disciplina exactos)
+  const handleAsignarProfeSlot = async (canchaId, fecha, horario, disciplina, profeId) => {
+    const key = `${disciplina}-${fecha}-${horario}`;
+    setClasesPorProfe(prev => ({ ...prev, [key]: profeId || undefined }));
+    try {
+      await setClaseProfesorId(canchaId, fecha, horario, profeId || null, mesActual);
+    } catch (err) {
+      setError('Error al asignar profesor');
+    }
+  };
+
   /**
-   * Registra o cambia el estado de asistencia de un alumno en un slot.
+   * Registra o cambia el estado de asistencia de un alumno en una clase.
    * Si `nuevoEstado` es null, borra la asistencia (toggle off).
-   * estados: 'asistio' | 'falto' | 'cambio_turno'
+   * estados: 'asistio' | 'falto' | 'vino_no_pago' | 'cambio_turno'
+   *
+   * @param {string}      alumnoId
+   * @param {string}      fecha      — "dd/mm"
+   * @param {string}      horario    — "18:00"
+   * @param {string|null} nuevoEstado
+   * @param {string}      canchaId   — por defecto 'cancha3'
    */
-  const handleRegistrarAsistencia = async (alumnoId, fecha, horario, nuevoEstado) => {
-    const fechaCompleta = `${fecha}/${anio}`;
+  const handleRegistrarAsistencia = async (alumnoId, fecha, horario, nuevoEstado, canchaId = 'cancha3') => {
     setSyncing(true);
     try {
-      // Borra el registro existente para este slot (si hay)
-      await removeAsistencia(alumnoId, fechaCompleta, horario);
-
       if (nuevoEstado) {
-        await addAsistencia({
-          alumnoId,
-          fecha: fechaCompleta,
-          mes: mesActual,
-          disciplina: disciplinaActiva,
-          horario,
+        await setAsistencia(canchaId, fecha, horario, alumnoId, {
           estado: nuevoEstado,
+          mes: mesActual,
         });
+      } else {
+        await removeAsistencia(canchaId, fecha, horario, alumnoId);
       }
 
       const clave = `${fecha}|${horario}`;
@@ -425,6 +434,94 @@ function App() {
         }
         return nuevo;
       });
+
+      // Lógica de deudas para slots privados
+      const slotPrivada = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario && s.tipo === 'privada');
+      if (slotPrivada) {
+        const fechaCompleta = `${fecha}/${anio}`;
+        const alumno = alumnos.find(a => a.id === alumnoId);
+        if (nuevoEstado === 'cambio_turno') {
+          // Canceló con aviso → borrar deuda
+          const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
+          if (pendientes.length > 0) {
+            await Promise.all(pendientes.map(p => deletePago(p.id)));
+            await cargarDatos(true);
+          }
+        } else if (nuevoEstado === null) {
+          // Toggle off → recrear deuda si no existe (venía de cambio_turno)
+          const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
+          if (pendientes.length === 0 && alumno) {
+            const disciplina = slotPrivada.disciplina || disciplinaActiva;
+            const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases privadas'] || 0;
+            await addPago({
+              alumnoId,
+              nombre: alumno.nombre,
+              mes: mesActual,
+              monto,
+              estado: 'Pendiente',
+              metodo: 'Efectivo',
+              disciplina,
+              tipo: 'privada',
+              fecha: fechaCompleta,
+              horario,
+            });
+            await cargarDatos(true);
+          }
+        }
+      }
+
+      // Si se quita la asistencia (toggle off), eliminar la deuda Pendiente de suelta si existe
+      if (nuevoEstado === null) {
+        const alumno = alumnos.find(a => a.id === alumnoId);
+        if (alumno?.tipoMembresia === 'Clases sueltas') {
+          const fechaCompleta = `${fecha}/${anio}`;
+          const pendientes = await getPagosSueltaPendientes(alumnoId, fechaCompleta, horario);
+          if (pendientes.length > 0) {
+            await Promise.all(pendientes.map(p => deletePago(p.id)));
+            await cargarDatos(true);
+          }
+        }
+      }
+
+      // Generar deuda automática para alumnos de clase suelta al marcar asistio o falto
+      if (nuevoEstado === 'asistio' || nuevoEstado === 'falto') {
+        const alumno = alumnos.find(a => a.id === alumnoId);
+        if (alumno?.tipoMembresia === 'Clases sueltas') {
+          const fechaCompleta = `${fecha}/${anio}`;
+          const deudaKey = `${alumnoId}|${fechaCompleta}|${horario}`;
+          // Evitar duplicados por clicks concurrentes rápidos
+          if (!deudaEnVuelo.current.has(deudaKey)) {
+            const pagoExistente = pagos.find(p =>
+              p.alumnoId === alumnoId &&
+              p.tipo === 'suelta' &&
+              p.fecha === fechaCompleta &&
+              p.horario === horario &&
+              ['Pendiente', 'Pagado'].includes(p.estado)
+            );
+            if (!pagoExistente) {
+              deudaEnVuelo.current.add(deudaKey);
+              try {
+                const monto = preciosTiposActivos['Clases sueltas'] || 0;
+                await addPago({
+                  alumnoId: alumno.id,
+                  nombre: alumno.nombre,
+                  mes: mesActual,
+                  monto,
+                  estado: 'Pendiente',
+                  metodo: 'Efectivo',
+                  disciplina: disciplinaActiva,
+                  tipo: 'suelta',
+                  fecha: fechaCompleta,
+                  horario,
+                });
+                await cargarDatos(true);
+              } finally {
+                deudaEnVuelo.current.delete(deudaKey);
+              }
+            }
+          }
+        }
+      }
     } catch (err) {
       setError('Error al guardar');
     } finally {
@@ -455,16 +552,16 @@ function App() {
     }
 
     if (encontrados.length > 0) {
-      const fechaCompleta = `${fechaLista}/${anio}`;
       setSyncing(true);
       try {
+        const horarioEfectivo = horario || '';
         await addAsistenciasLote(
           encontrados.map(a => ({
+            canchaId: 'cancha3',
             alumnoId: a.id,
-            fecha: fechaCompleta,
+            fecha: fechaLista,         // "dd/mm"
             mes: mesActual,
-            disciplina: disciplinaActiva,
-            horario: horario || a.horario || '',
+            horario: horarioEfectivo,
             estado: 'asistio',
           }))
         );
@@ -472,7 +569,7 @@ function App() {
           const nuevo = { ...prev };
           encontrados.forEach(a => {
             if (!nuevo[a.id]) nuevo[a.id] = {};
-            nuevo[a.id] = { ...nuevo[a.id], [fechaLista]: 'asistio' };
+            nuevo[a.id] = { ...nuevo[a.id], [`${fechaLista}|${horarioEfectivo}`]: 'asistio' };
           });
           return nuevo;
         });
@@ -538,7 +635,7 @@ function App() {
         ).catch(() => {}); // no bloquear el pago si falla
       }
 
-      await cargarDatos();
+      await cargarDatos(true);
       return { success: true, mensaje: `✓ ${alumno.nombre} - ${formatMonto(monto)}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
@@ -566,9 +663,9 @@ function App() {
         fecha: fechaCompleta,
         horario,
       });
-      // Agrega al alumno al slot de cancha3 para esa fecha/horario
-      await agregarAlumnoASlot('cancha3', fecha, horario, alumno.id);
-      await cargarDatos();
+      // NO se agrega al slot de cancha automáticamente.
+      // La deuda queda registrada en Pagos para cobrar cuando el alumno asista.
+      await cargarDatos(true);
       return { success: true, mensaje: `✓ ${alumno.nombre} — Deuda registrada ${fecha} ${horario}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
@@ -587,15 +684,15 @@ function App() {
         nombre: alumno.nombre,
         mes: mesActual,
         monto,
-        estado: 'Pagado',
+        estado: 'Pendiente',
         metodo,
         disciplina: disciplinaActiva,
         tipo: 'privada',
         fecha: `${fecha}/${anio}`,
         horario,
       });
-      await cargarDatos();
-      return { success: true, mensaje: `✓ ${alumno.nombre} — Clase privada ${fecha} ${horario}` };
+      await cargarDatos(true);
+      return { success: true, mensaje: `✓ ${alumno.nombre} — Deuda registrada ${fecha} ${horario}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
     } finally {
@@ -620,7 +717,7 @@ function App() {
         fecha: `${fecha}/${anio}`,
         horario,
       });
-      await cargarDatos();
+      await cargarDatos(true);
       return { success: true, mensaje: `✓ ${alumno.nombre} — Clase de prueba ${fecha} ${horario}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
@@ -646,7 +743,7 @@ function App() {
         fecha: `${fecha}/${anio}`,
         horario,
       });
-      await cargarDatos();
+      await cargarDatos(true);
       return { success: true, mensaje: `✓ ${alumno.nombre} — Day Use registrado ${fecha}` };
     } catch (err) {
       return { success: false, mensaje: 'Error de conexión' };
@@ -671,7 +768,7 @@ function App() {
       if (alumno.diasElegidos?.length > 0 && alumno.horario) {
         await llenarCuposMembresia(alumno.id, alumno.diasElegidos, alumno.horario, mesNum, anio, disciplinaActiva).catch(() => {});
       }
-      await cargarDatos();
+      await cargarDatos(true);
       return { success: true };
     } catch (err) {
       return { success: false };
@@ -684,7 +781,7 @@ function App() {
     setSyncing(true);
     try {
       await updatePago(pagoId, { estado: 'Pagado', metodo });
-      await cargarDatos();
+      await cargarDatos(true);
       return { success: true };
     } catch (err) {
       return { success: false };
@@ -709,7 +806,7 @@ function App() {
         fecha: pago.fecha,
         horario: pago.horario,
       });
-      await cargarDatos();
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al registrar pago');
     } finally {
@@ -721,7 +818,7 @@ function App() {
     setSyncing(true);
     try {
       await deletePago(pagoId);
-      await cargarDatos();
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al cancelar deuda');
     } finally {
@@ -730,10 +827,14 @@ function App() {
   };
 
   const handleUpdatePrecioTipo = (disciplina, tipo, valor) => {
-    setPreciosTipos(prev => ({
-      ...prev,
-      [disciplina]: { ...prev[disciplina], [tipo]: parseInt(valor) || 0 }
-    }));
+    setPreciosTipos(prev => {
+      const next = {
+        ...prev,
+        [disciplina]: { ...prev[disciplina], [tipo]: parseInt(valor) || 0 }
+      };
+      setConfig({ preciosTipos: next }).catch(() => {});
+      return next;
+    });
   };
 
   // Llena los cupos del mes para TODOS los alumnos activos con diasElegidos
@@ -752,7 +853,7 @@ function App() {
           llenarCuposMembresia(a.id, a.diasElegidos, a.horario, mesNum, anio, disciplinaActiva)
         )
       );
-      await cargarDatos();
+      await cargarDatos(true);
     } catch (err) {
       console.error('Error llenarMes:', err);
       setError(err?.message || 'Error al llenar mes');
@@ -764,7 +865,7 @@ function App() {
   const handleAgregarAlumnoSlot = async (canchaId, fecha, horario, alumnoId, slotTipo) => {
     setSyncing(true);
     try {
-      await agregarAlumnoASlot(canchaId, fecha, horario, alumnoId);
+      await agregarAlumnoAClase(canchaId, fecha, horario, alumnoId);
 
       // Auto-create pending suelta debt for non-membresía students in Clásica slots
       const normSlotTipo = (slotTipo === 'membresia' || slotTipo === 'suelta' || !slotTipo) ? 'clasica' : slotTipo;
@@ -787,36 +888,84 @@ function App() {
             fecha: `${fecha}/${anio}`,
             horario,
           });
-          await cargarDatos();
+          await cargarDatos(true);
           return;
         }
       }
 
-      if (normSlotTipo === 'clasica') {
+      if (normSlotTipo === 'privada') {
         const alumno = alumnos.find(a => a.id === alumnoId);
-        if (alumno && alumno.tipoMembresia && alumno.tipoMembresia !== 'Membresía mensual') {
+        if (alumno) {
           const slot = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario);
           const disciplina = slot?.disciplina || disciplinaActiva;
-          const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases sueltas'] || 0;
-          await addPago({
-            alumnoId: alumno.id,
-            nombre: alumno.nombre,
-            mes: mesActual,
-            monto,
-            estado: 'Pendiente',
-            metodo: 'Efectivo',
-            disciplina,
-            tipo: 'suelta',
-            fecha: `${fecha}/${anio}`,
-            horario,
-          });
-          await cargarDatos();
+          const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases privadas'] || 0;
+          const fechaCompleta = `${fecha}/${anio}`;
+          const existente = pagos.find(p =>
+            p.alumnoId === alumnoId && p.tipo === 'privada' &&
+            p.fecha === fechaCompleta && p.horario === horario &&
+            ['Pendiente', 'Pagado'].includes(p.estado)
+          );
+          if (!existente) {
+            await addPago({
+              alumnoId: alumno.id,
+              nombre: alumno.nombre,
+              mes: mesActual,
+              monto,
+              estado: 'Pendiente',
+              metodo: 'Efectivo',
+              disciplina,
+              tipo: 'privada',
+              fecha: fechaCompleta,
+              horario,
+            });
+          }
+          await cargarDatos(true);
           return;
         }
       }
 
-      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
-      setOcupacion(ocupData);
+      // Suelta: la deuda normalmente se crea en handleRegistrarAsistencia al marcar asistio/falto.
+      // Excepción: si al re-agregar ya existe asistencia marcada (y el pago fue eliminado), crear la deuda ahora.
+      const alumno = alumnos.find(a => a.id === alumnoId);
+      if (alumno?.tipoMembresia === 'Clases sueltas') {
+        const clave = `${fecha}|${horario}`;
+        const estadoAsist = asistencias[alumnoId]?.[clave];
+        if (estadoAsist === 'asistio' || estadoAsist === 'falto') {
+          const fechaCompleta = `${fecha}/${anio}`;
+          const deudaKey = `${alumnoId}|${fechaCompleta}|${horario}`;
+          const pagoExistente = pagos.find(p =>
+            p.alumnoId === alumnoId &&
+            p.tipo === 'suelta' &&
+            p.fecha === fechaCompleta &&
+            p.horario === horario &&
+            ['Pendiente', 'Pagado'].includes(p.estado)
+          );
+          if (!pagoExistente && !deudaEnVuelo.current.has(deudaKey)) {
+            deudaEnVuelo.current.add(deudaKey);
+            try {
+              const slot = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario);
+              const disciplina = slot?.disciplina || disciplinaActiva;
+              const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases sueltas'] || 0;
+              await addPago({
+                alumnoId: alumno.id,
+                nombre: alumno.nombre,
+                mes: mesActual,
+                monto,
+                estado: 'Pendiente',
+                metodo: 'Efectivo',
+                disciplina,
+                tipo: 'suelta',
+                fecha: fechaCompleta,
+                horario,
+              });
+            } finally {
+              deudaEnVuelo.current.delete(deudaKey);
+            }
+          }
+        }
+      }
+
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al agregar alumno al slot');
     } finally {
@@ -824,12 +973,29 @@ function App() {
     }
   };
 
-  const handleRemoverAlumnoSlot = async (canchaId, fecha, horario, alumnoId) => {
+  const handleRemoverAlumnoSlot = async (canchaId, fecha, horario, alumnoId, currentAlumnos = []) => {
     setSyncing(true);
     try {
-      await removerAlumnoDeSlot(canchaId, fecha, horario, alumnoId);
-      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
-      setOcupacion(ocupData);
+      await removerAlumnoDeClase(canchaId, fecha, horario, alumnoId, mesActual, currentAlumnos);
+
+      // Borrar la asistencia para que no descuente clases del cupo de membresía
+      await removeAsistencia(canchaId, fecha, horario, alumnoId).catch(() => {});
+
+      const alumno = alumnos.find(a => a.id === alumnoId);
+      const fechaCompleta = `${fecha}/${anio}`;
+
+      if (alumno?.tipoMembresia === 'Clases sueltas') {
+        const pendientes = await getPagosSueltaPendientes(alumnoId, fechaCompleta, horario);
+        await Promise.all(pendientes.map(p => deletePago(p.id)));
+      }
+
+      const slotRemovido = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario);
+      if (slotRemovido?.tipo === 'privada') {
+        const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
+        await Promise.all(pendientes.map(p => deletePago(p.id)));
+      }
+
+      await cargarDatos(true);
     } catch (err) {
       setError('Error al remover alumno del slot');
     } finally {
@@ -840,9 +1006,9 @@ function App() {
   const handleCrearSlot = async (canchaId, fecha, horario, data) => {
     setSyncing(true);
     try {
-      await setSlot(canchaId, fecha, horario, { ...data, mes: mesActual });
-      const ocupData = await getOcupacionMes(mesActual).catch(() => []);
-      setOcupacion(ocupData);
+      await setClase(canchaId, fecha, horario, { ...data, mes: mesActual });
+      const clasesData = await getClasesMes(mesActual).catch(() => []);
+      setOcupacion(clasesData);
     } catch (err) {
       setError('Error al crear slot');
     } finally {
@@ -851,13 +1017,120 @@ function App() {
   };
 
   const handleUpdatePrecios = (disciplina, plan, frecuencia, valor) => {
-    setPrecios(prev => ({
-      ...prev,
-      [disciplina]: {
-        ...prev[disciplina],
-        [plan]: { ...prev[disciplina]?.[plan], [frecuencia]: valor }
-      }
-    }));
+    setPrecios(prev => {
+      const next = {
+        ...prev,
+        [disciplina]: {
+          ...prev[disciplina],
+          [plan]: { ...prev[disciplina]?.[plan], [frecuencia]: valor }
+        }
+      };
+      setConfig({ precios: next }).catch(() => {});
+      return next;
+    });
+  };
+
+  // ── Exportar ───────────────────────────────────────────────────────────────
+
+  const handleExportarPagos = () => {
+    const headers = ['Nombre', 'Disciplina', 'Mes', 'Tipo', 'Plan', 'Frecuencia', 'Monto', 'Estado', 'Método', 'Fecha', 'Horario'];
+    const rows = pagos.map(p => {
+      const al = alumnos.find(a => a.id === p.alumnoId);
+      return [
+        p.nombre || al?.nombre || '',
+        p.disciplina || '',
+        p.mes || '',
+        p.tipo || 'membresia',
+        al?.plan || '',
+        al?.frecuencia || '',
+        p.monto || 0,
+        p.estado || '',
+        p.metodo || '',
+        p.fecha || '',
+        p.horario || '',
+      ];
+    });
+    // Membresías pendientes: alumnos activos sin registro de pago en Firestore
+    pagosPendientes.forEach(a => {
+      const monto = preciosDisciplina[a.plan]?.[a.frecuencia] || 0;
+      rows.push([a.nombre, disciplinaActiva, mesActual, 'membresia', a.plan, a.frecuencia, monto, 'Pendiente', '', '', '']);
+    });
+    downloadCSV(headers, rows, `pagos-${mesActual}.csv`);
+    setExportModal(false);
+  };
+
+  const handleExportarClases = () => {
+    const headers = ['Cancha', 'Fecha', 'Horario', 'Disciplina', 'Tipo', 'Alumno', 'Asistencia'];
+    const rows = [];
+    const incluidos = new Set(); // evitar duplicados entre slots reales y virtuales
+
+    // 1. Slots reales de Firestore
+    ocupacion.forEach(slot => {
+      (slot.alumnos || []).forEach(alumnoId => {
+        const al = alumnos.find(a => a.id === alumnoId);
+        const asist = asistencias[alumnoId]?.[`${slot.fecha}|${slot.horario}`] || '';
+        const key = `${slot.canchaId}|${slot.fecha}|${slot.horario}|${alumnoId}`;
+        incluidos.add(key);
+        rows.push([slot.canchaId || '', slot.fecha || '', slot.horario || '', slot.disciplina || '', slot.tipo || 'clasica', al?.nombre || alumnoId, asist]);
+      });
+    });
+
+    // 2. Slots virtuales: alumnos con membresía mensual y diasElegidos
+    const todasLasFechas = getFechasMes(mesNum, anio);
+    alumnos
+      .filter(a => a.estado === 'Activo' && a.diasElegidos?.length > 0 && a.horario && (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual'))
+      .forEach(alumno => {
+        todasLasFechas.forEach(fecha => {
+          const [d, m] = fecha.split('/').map(Number);
+          const diaSemana = new Date(anio, m - 1, d).getDay();
+          if (!alumno.diasElegidos.includes(diaSemana)) return;
+          (alumno.disciplinas || ['Futvoley']).forEach(disc => {
+            const key = `cancha3|${fecha}|${alumno.horario}|${alumno.id}`;
+            if (incluidos.has(key)) return;
+            incluidos.add(key);
+            const asist = asistencias[alumno.id]?.[`${fecha}|${alumno.horario}`] || '';
+            rows.push(['cancha3', fecha, alumno.horario, disc, 'clasica', alumno.nombre, asist]);
+          });
+        });
+      });
+
+    // 3. Asistencias huérfanas: marcadas en un día fuera del horario regular del alumno
+    Object.entries(asistencias).forEach(([alumnoId, claves]) => {
+      Object.entries(claves).forEach(([clave, estado]) => {
+        const [fecha, horario] = clave.split('|');
+        const key = `cancha3|${fecha}|${horario}|${alumnoId}`;
+        if (incluidos.has(key)) return;
+        incluidos.add(key);
+        const al = alumnos.find(a => a.id === alumnoId);
+        rows.push(['cancha3', fecha || '', horario || '', '', 'clasica', al?.nombre || alumnoId, estado]);
+      });
+    });
+
+    rows.sort((a, b) => {
+      const [da, ma] = (a[1] || '').split('/').map(Number);
+      const [db, mb] = (b[1] || '').split('/').map(Number);
+      return ma !== mb ? ma - mb : da !== db ? da - db : (a[2] || '').localeCompare(b[2] || '');
+    });
+    downloadCSV(headers, rows, `clases-${mesActual}.csv`);
+    setExportModal(false);
+  };
+
+  const handleExportarAsistencias = () => {
+    const rows = [];
+    Object.entries(asistencias).forEach(([alumnoId, claves]) => {
+      const al = alumnos.find(a => a.id === alumnoId);
+      Object.entries(claves).forEach(([clave, estado]) => {
+        const [fecha, horario] = clave.split('|');
+        rows.push([al?.nombre || alumnoId, fecha || '', horario || '', estado || '']);
+      });
+    });
+    rows.sort((a, b) => {
+      const [da, ma] = (a[1] || '').split('/').map(Number);
+      const [db, mb] = (b[1] || '').split('/').map(Number);
+      return ma !== mb ? ma - mb : da - db;
+    });
+    downloadCSV(['Alumno', 'Fecha', 'Horario', 'Estado'], rows, `asistencias-${mesActual}.csv`);
+    setExportModal(false);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -912,16 +1185,9 @@ function App() {
 
           {/* Centro: disciplina activa — siempre visible, coloreada, clickeable */}
           {(() => {
-            const colores = {
-              'Futvoley':     { bg: 'bg-slate-800/10',  border: 'border-slate-700/25',  text: 'text-slate-800'  },
-              'Beach Tennis': { bg: 'bg-orange-500/10', border: 'border-orange-500/25', text: 'text-orange-600' },
-              'Beach Volley': { bg: 'bg-amber-500/10',  border: 'border-amber-500/25',  text: 'text-amber-600'  },
-              'Funcional':    { bg: 'bg-violet-600/10', border: 'border-violet-500/25', text: 'text-violet-700'  },
-            };
-            const c = colores[disciplinaActiva] || colores['Futvoley'];
+            const c = DISC_COLORS[disciplinaActiva] || DISC_COLORS['Futvoley'];
             return (
               <div className={`relative flex items-center justify-center gap-2 ${c.bg} border-2 ${c.border} rounded-2xl px-4 py-2`}>
-                <DisciplinaIcon disciplina={disciplinaActiva} size={22} />
                 <span className={`text-sm font-black ${c.text} whitespace-nowrap`}>{disciplinaActiva}</span>
                 <select
                   value={disciplinaActiva}
@@ -934,9 +1200,56 @@ function App() {
             );
           })()}
 
-          {/* Derecha: sync */}
+          {/* Derecha: sync + export */}
           <div className="flex items-center justify-end gap-2">
             {syncing && <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full spinner"></div>}
+            <div className="relative">
+              <button
+                onClick={() => setExportModal(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container rounded-full text-on-surface-variant text-xs font-semibold transition-colors"
+              >
+                <Icon name="download" size={15} />
+                <span className="hidden sm:inline">Exportar</span>
+              </button>
+              {exportModal && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setExportModal(false)} />
+                  <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-surface-container p-2 z-50 w-52">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-outline px-3 py-1.5">Exportar CSV</p>
+                    <button
+                      onClick={handleExportarPagos}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low text-left transition-colors"
+                    >
+                      <Icon name="payments" size={18} className="text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-on-surface">Pagos</p>
+                        <p className="text-[10px] text-outline">Todos los registros del mes</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleExportarClases}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low text-left transition-colors"
+                    >
+                      <Icon name="calendar_month" size={18} className="text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-on-surface">Clases</p>
+                        <p className="text-[10px] text-outline">Slots con alumnos y asistencia</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleExportarAsistencias}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container-low text-left transition-colors"
+                    >
+                      <Icon name="fact_check" size={18} className="text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-on-surface">Asistencias</p>
+                        <p className="text-[10px] text-outline">Registro de estados del mes</p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </header>
 
@@ -976,24 +1289,6 @@ function App() {
             />
           )}
 
-          {seccionActiva === 'clases' && (
-            <Clases
-              disciplinaActiva={disciplinaActiva}
-              mesActual={mesActual}
-              mesNum={mesNum}
-              anio={anio}
-              ocupacion={ocupacion}
-              alumnos={alumnos}
-              alumnosDisciplina={alumnosDisciplina}
-              asistencias={asistencias}
-              profesores={profesores}
-              clasesPorProfe={clasesPorProfe}
-              onRegistrarAsistencia={handleRegistrarAsistencia}
-              onProcesarLista={handleProcesarLista}
-              onLlenarMes={handleLlenarMes}
-              syncing={syncing}
-            />
-          )}
 
           {seccionActiva === 'pagos' && (
             <Pagos
@@ -1044,11 +1339,16 @@ function App() {
               ocupacion={ocupacion}
               alumnos={alumnos}
               asistencias={asistencias}
+              profesores={profesores}
+              clasesPorProfe={clasesPorProfe}
               onAgregar={handleAgregarAlumnoSlot}
               onRemover={handleRemoverAlumnoSlot}
               onCrearSlot={handleCrearSlot}
               onRegistrarAsistencia={handleRegistrarAsistencia}
+              onAsignarProfe={handleAsignarProfeSlot}
               syncing={syncing}
+              vistaMode={vistaGrilla}
+              setVistaMode={setVistaGrilla}
             />
           )}
 
@@ -1061,10 +1361,14 @@ function App() {
               onUpdatePrecioTipo={handleUpdatePrecioTipo}
             />
           )}
+
+          {seccionActiva === 'shop' && <Shop />}
         </div>
       </main>
 
-      <BottomNav seccionActiva={seccionActiva} setSeccionActiva={setSeccionActiva} />
+      {!(seccionActiva === 'canchas' && vistaGrilla === 'semana') && (
+        <BottomNav seccionActiva={seccionActiva} setSeccionActiva={setSeccionActiva} />
+      )}
     </div>
   );
 }
