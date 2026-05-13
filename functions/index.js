@@ -99,18 +99,19 @@ exports.emitirFactura = onCall({ invoker: 'public' }, async (request) => {
       production: config.production === true, // false = homologación (default)
     });
 
-    // Obtener el último número de comprobante autorizado para este PtoVta y CbteTipo
-    // y calcular el siguiente
     const payload = { ...factura.arcaPayload };
 
-    const resultado = await arca.electronicBillingService.createVoucher({
-      CantReg:    1,
+    // createNextVoucher auto-calcula CbteDesde/CbteHasta consultando el último nro
+    const lastVoucher    = await arca.electronicBillingService.getLastVoucher(payload.PtoVta, payload.CbteTipo);
+    const nroComprobante = (lastVoucher.cbteNro || 0) + 1;
+
+    const resultado = await arca.electronicBillingService.createNextVoucher({
+      CantReg: 1,
       ...payload,
     });
 
-    const cae            = resultado.CAE;
-    const caeFchVto      = resultado.CAEFchVto;
-    const nroComprobante = payload.CbteDesde;
+    const cae       = resultado.cae;
+    const caeFchVto = resultado.caeFchVto;
 
     // Actualizar factura con el CAE
     await db.doc(`facturas/${facturaId}`).update({
