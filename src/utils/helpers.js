@@ -17,6 +17,26 @@ export const PRECIOS_TIPOS_DEFAULT = {
   'Funcional':    { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
   'Gimnasio':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
 };
+
+// Precios QR de membresías por disciplina/plan/frecuencia (configurables por mes)
+export const PRECIOS_QR_DEFAULT = {
+  'Futvoley':     { 'Arena Basic': { '1x sem': 70000, '2x sem': 134000 }, 'Arena Plus': { '1x sem': 98000,  '2x sem': 209000 }, 'Arena Premium': { '1x sem': 129000, '2x sem': 246000 } },
+  'Beach Tennis': { 'Arena Basic': { '1x sem': 84000, '2x sem': 162400 }, 'Arena Plus': { '1x sem': 117600, '2x sem': 235200 }, 'Arena Premium': { '1x sem': 147000, '2x sem': 296800 } },
+  'Beach Volley': { 'Arena Basic': { '1x sem': 70000, '2x sem': 134000 }, 'Arena Plus': { '1x sem': 98000,  '2x sem': 209000 }, 'Arena Premium': { '1x sem': 129000, '2x sem': 246000 } },
+  'Funcional':    { 'Arena Basic': { '1x sem': 70000, '2x sem': 134000 }, 'Arena Plus': { '1x sem': 98000,  '2x sem': 209000 }, 'Arena Premium': { '1x sem': 129000, '2x sem': 246000 } },
+};
+
+// Precios de clases privadas/semi-privadas por disciplina y número de personas
+// Efectivo = EFT, Transferencia = QR (25% más)
+const _BT_PRIV = { privada_1p: { Efectivo: 56000, Transferencia: 70000 }, privada_2p: { Efectivo: 36400, Transferencia: 45500 }, privada_3p: { Efectivo: 26320, Transferencia: 32900 }, privada_4p: { Efectivo: 20720, Transferencia: 25900 } };
+const _FV_PRIV = { privada_1p: { Efectivo: 50000, Transferencia: 62500 }, privada_2p: { Efectivo: 30000, Transferencia: 37500 }, privada_3p: { Efectivo: 25000, Transferencia: 31250 }, privada_4p: { Efectivo: 25000, Transferencia: 31250 } };
+export const PRECIOS_PRIVADAS_DEFAULT = {
+  'Futvoley':     _FV_PRIV,
+  'Beach Tennis': _BT_PRIV,
+  'Beach Volley': _FV_PRIV,
+  'Funcional':    _FV_PRIV,
+  'Gimnasio':     _FV_PRIV,
+};
 export const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 export const PRECIOS_DEFAULT = {

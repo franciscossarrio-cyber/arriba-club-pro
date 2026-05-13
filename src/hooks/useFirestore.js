@@ -47,7 +47,8 @@ export const useFirestore = () => {
     addPago:                   wrap(fs.addPago),
     updatePago:                wrap(fs.updatePago),
     deletePago:                wrap(fs.deletePago),
-    getPagosSueltaPendientes:  wrap(fs.getPagosSueltaPendientes),
+    getPagosSueltaPendientes:     wrap(fs.getPagosSueltaPendientes),
+    getPagosPendientesPorTipo:    wrap(fs.getPagosPendientesPorTipo),
 
     // ── Asistencias (subcol de clases) ────────────────────────────────────
     /** @param {string|null} mes */
@@ -116,8 +117,10 @@ export const useFirestore = () => {
     deleteCambioTurno: wrap(fs.deleteCambioTurno),
 
     // ── Config ────────────────────────────────────────────────────────────
-    getConfig: wrap(fs.getConfig),
-    setConfig: wrap(fs.setConfig),
+    getConfig:    wrap(fs.getConfig),
+    setConfig:    wrap(fs.setConfig),
+    getConfigMes: wrap(fs.getConfigMes),
+    setConfigMes: wrap(fs.setConfigMes),
 
     // ── Profesores ────────────────────────────────────────────────────────
     getProfesores:   wrap(fs.getProfesores),

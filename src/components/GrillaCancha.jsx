@@ -12,9 +12,10 @@ const HORARIOS_MANANA = HORARIOS_GRILLA.filter(h => parseInt(h) <= 16);
 const HORARIOS_TARDE  = HORARIOS_GRILLA.filter(h => parseInt(h) >= 17);
 
 const CANCHAS = [
-  { id: 'cancha1', label: 'Cancha 1' },
-  { id: 'cancha2', label: 'Cancha 2' },
-  { id: 'cancha3', label: 'Cancha 3' },
+  { id: 'cancha1',  label: 'Cancha 1',  tipo: 'cancha' },
+  { id: 'cancha2',  label: 'Cancha 2',  tipo: 'cancha' },
+  { id: 'cancha3',  label: 'Cancha 3',  tipo: 'cancha' },
+  { id: 'gimnasio', label: 'Gimnasio',  tipo: 'gym'    },
 ];
 
 const TIPO_STYLES = {
@@ -34,7 +35,7 @@ const ASIST = {
 
 const DIAS_NOMBRE = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
-// ─── SVG Cancha ───────────────────────────────────────────────────────────────
+// ─── SVGs ────────────────────────────────────────────────────────────────────
 
 const CourtSVG = () => (
   <svg viewBox="0 0 180 100" className="w-full h-full">
@@ -46,6 +47,20 @@ const CourtSVG = () => (
     <line x1="90" y1="90" x2="90" y2="96" stroke="#cc0000" strokeWidth="2"/>
     <line x1="18" y1="50" x2="162" y2="50" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2"/>
     <rect x="86" y="14" width="8" height="72" fill="rgba(0,0,0,0.08)"/>
+  </svg>
+);
+
+const GymSVG = () => (
+  <svg viewBox="0 0 180 100" className="w-full h-full">
+    <rect width="180" height="100" fill="#e8eaf6" rx="8"/>
+    {/* barra */}
+    <rect x="34" y="44" width="112" height="12" fill="#7986cb" rx="4"/>
+    {/* mancuerna izq */}
+    <rect x="18" y="30" width="20" height="40" fill="#5c6bc0" rx="5"/>
+    <rect x="10" y="36" width="14" height="28" fill="#3f51b5" rx="4"/>
+    {/* mancuerna der */}
+    <rect x="142" y="30" width="20" height="40" fill="#5c6bc0" rx="5"/>
+    <rect x="156" y="36" width="14" height="28" fill="#3f51b5" rx="4"/>
   </svg>
 );
 
@@ -138,7 +153,7 @@ const BADGE = {
   dayuse:  { label: 'DAY USE',        bg: 'bg-green-50  text-green-600',  border: 'border-l-green-500'  },
 };
 
-const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, compact = false, profesoresMap = {} }) => {
+const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, compact = false, mini = false, profesoresMap = {} }) => {
   const ids     = slot?.alumnos || [];
   const tipo    = normTipo(slot?.tipo || 'clasica');
   const clave   = `${fecha}|${horario}`;
@@ -147,6 +162,41 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
   const efectivos   = ids.length - cancelados;
   const badge   = BADGE[tipo] || BADGE.clasica;
   const profe   = slot?.profesorId ? profesoresMap[slot.profesorId] : null;
+
+  // ── Mini (panorama día) ───────────────────────────────────────────────────
+  if (mini) {
+    if (ids.length === 0) {
+      return (
+        <button onClick={onClick}
+          className="w-full h-[34px] rounded-md border border-dashed border-slate-150 hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center group">
+          <Icon name="add" size={11} className="text-slate-200 group-hover:text-primary/40 transition-colors" />
+        </button>
+      );
+    }
+    const discLabel = tipo === 'clasica' ? (slot?.disciplina || 'Clase') : badge.label;
+    return (
+      <button onClick={onClick}
+        className={`w-full h-[34px] border-l-[3px] ${badge.border} border border-slate-100 rounded-md bg-white hover:shadow-sm transition-all text-left px-1.5 flex items-center gap-1.5 overflow-hidden`}>
+        <span className={`text-[9px] font-black uppercase truncate flex-1 leading-none ${badge.bg.split(' ')[1]}`}>
+          {discLabel}
+        </span>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {ids.slice(0, 3).map((id) => {
+            const estado = asistencias?.[id]?.[clave];
+            const asist  = ASIST[estado];
+            return (
+              <div key={id}
+                className={`w-3 h-3 rounded-full border border-white ${asist ? asist.dot : 'bg-slate-300'}`} />
+            );
+          })}
+          {ids.length > 3 && <span className="text-[7px] text-slate-400 font-bold">+{ids.length - 3}</span>}
+        </div>
+        <span className="text-[8px] font-bold tabular-nums text-slate-400 shrink-0">
+          {ids.length}<span className="text-slate-300">/{tipo === 'dayuse' ? '∞' : 8}</span>
+        </span>
+      </button>
+    );
+  }
 
   // ── Compact (vista semanal) ────────────────────────────────────────────────
   if (compact) {
@@ -650,24 +700,38 @@ const GrillaCancha = ({
           <h1 className="text-2xl font-black text-on-surface tracking-tight">Canchas</h1>
           <p className="text-on-surface-variant text-sm">{mesActual}</p>
         </div>
-        <div className="flex items-center gap-1 p-1 bg-surface-container-lowest rounded-xl shadow-sm">
-          {[
-            { key: 'dia',    label: 'Día',    icon: 'calendar_today'     },
-            { key: 'semana', label: 'Semana', icon: 'calendar_view_week' },
-          ].map(v => (
+        <div className="flex items-center gap-2">
+          {!esDiaHoy && (
             <button
-              key={v.key}
-              onClick={() => setVistaMode(v.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                vistaMode === v.key
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
+              onClick={() => {
+                const hoy = new Date();
+                if (hoy.getMonth() + 1 === mesNum && hoy.getFullYear() === anio)
+                  setFechaSeleccionada(`${String(hoy.getDate()).padStart(2,'0')}/${String(mesNum).padStart(2,'0')}`);
+              }}
+              className="text-[11px] font-black text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors"
             >
-              <Icon name={v.icon} size={14} />
-              {v.label}
+              Hoy
             </button>
-          ))}
+          )}
+          <div className="flex items-center gap-1 p-1 bg-surface-container-lowest rounded-xl shadow-sm">
+            {[
+              { key: 'dia',    label: 'Día',    icon: 'calendar_today'     },
+              { key: 'semana', label: 'Semana', icon: 'calendar_view_week' },
+            ].map(v => (
+              <button
+                key={v.key}
+                onClick={() => setVistaMode(v.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  vistaMode === v.key
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <Icon name={v.icon} size={14} />
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -760,36 +824,38 @@ const GrillaCancha = ({
         </p>
       </div>
 
-      {/* ── Vista Día ───────────────────────────────────────────────────── */}
+      {/* ── Vista Día (panorama compacto) ───────────────────────────────── */}
       {vistaMode === 'dia' && (
         <div className="overflow-x-auto">
-          <div className="min-w-[480px] bg-surface-container-lowest rounded-2xl border border-slate-200/60 overflow-hidden shadow-sm">
+          <div className="min-w-[540px] bg-surface-container-lowest rounded-2xl border border-slate-200/60 overflow-hidden shadow-sm">
             {/* Header de canchas */}
-            <div className="grid grid-cols-[52px_1fr_1fr_1fr] border-b border-slate-200/60">
-              <div className="py-3 border-r border-slate-200/40" />
+            <div className="grid grid-cols-[44px_1fr_1fr_1fr_1fr] border-b border-slate-200/60">
+              <div className="py-2 border-r border-slate-200/40" />
               {CANCHAS.map((c, i) => (
-                <div key={c.id} className={`py-3 px-2 flex flex-col items-center gap-1.5 ${i < 2 ? 'border-r border-slate-200/40' : ''}`}>
-                  <div className="w-full h-10 rounded-lg overflow-hidden"><CourtSVG /></div>
-                  <span className="text-[10px] font-black text-on-surface-variant uppercase tracking-wider">{c.label}</span>
+                <div key={c.id} className={`py-2 px-2 flex flex-col items-center gap-1 ${i < CANCHAS.length - 1 ? 'border-r border-slate-200/40' : ''}`}>
+                  <div className="w-full h-8 rounded-md overflow-hidden">
+                    {c.tipo === 'gym' ? <GymSVG /> : <CourtSVG />}
+                  </div>
+                  <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-wider">{c.label}</span>
                 </div>
               ))}
             </div>
-            {/* Filas de horarios */}
+            {/* Filas de horarios — mini/panorama */}
             {horariosVisibles.map((horario, rowIdx) => {
-              const isLast    = rowIdx === horariosVisibles.length - 1;
-              const esAhora   = esDiaHoy && horario === horaActual;
+              const isLast  = rowIdx === horariosVisibles.length - 1;
+              const esAhora = esDiaHoy && horario === horaActual;
               return (
                 <div key={horario}
-                  className={`grid grid-cols-[52px_1fr_1fr_1fr] ${!isLast ? 'border-b border-slate-200/40' : ''} ${esAhora ? 'bg-primary/5' : ''}`}>
+                  className={`grid grid-cols-[44px_1fr_1fr_1fr_1fr] ${!isLast ? 'border-b border-slate-200/40' : ''} ${esAhora ? 'bg-primary/5' : rowIdx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
                   {/* Columna hora */}
-                  <div className="flex items-center justify-end pr-3 py-2 border-r border-slate-200/40 gap-1.5">
-                    {esAhora && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
-                    <span className={`text-[11px] font-bold tabular-nums ${esAhora ? 'text-primary' : 'text-slate-400'}`}>
+                  <div className="flex items-center justify-end pr-2 py-1 border-r border-slate-200/40 gap-1">
+                    {esAhora && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                    <span className={`text-[10px] font-bold tabular-nums ${esAhora ? 'text-primary' : 'text-slate-400'}`}>
                       {horario}
                     </span>
                   </div>
                   {CANCHAS.map((c, i) => (
-                    <div key={c.id} className={`p-2 ${i < 2 ? 'border-r border-slate-200/40' : ''}`}>
+                    <div key={c.id} className={`p-1 ${i < CANCHAS.length - 1 ? 'border-r border-slate-200/40' : ''}`}>
                       <SlotCell
                         slot={slotsDia[`${c.id}|${horario}`]}
                         alumnosMap={alumnosMap}
@@ -797,6 +863,7 @@ const GrillaCancha = ({
                         fecha={fechaSeleccionada}
                         horario={horario}
                         onClick={() => openModal(c.id, horario)}
+                        mini
                         profesoresMap={profesoresMap}
                       />
                     </div>

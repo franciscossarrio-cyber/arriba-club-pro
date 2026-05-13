@@ -455,6 +455,19 @@ export async function setConfig(data) {
   await setDoc(doc(db, 'config', 'precios'), data, { merge: true });
 }
 
+/** Devuelve la config específica de un mes (ej: "Mayo 2026"). Retorna null si no existe. */
+export async function getConfigMes(mes) {
+  const key = mes.replace(' ', '-');
+  const snap = await getDoc(doc(db, 'config', `precios-${key}`));
+  return snap.exists() ? snap.data() : null;
+}
+
+/** Guarda (merge) la config específica de un mes. */
+export async function setConfigMes(mes, data) {
+  const key = mes.replace(' ', '-');
+  await setDoc(doc(db, 'config', `precios-${key}`), data, { merge: true });
+}
+
 // ─── PROFESORES ──────────────────────────────────────────────────────────────
 
 /** Devuelve todos los profesores. */

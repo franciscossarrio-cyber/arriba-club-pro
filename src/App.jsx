@@ -22,6 +22,8 @@ import {
   MESES,
   PRECIOS_DEFAULT,
   PRECIOS_TIPOS_DEFAULT,
+  PRECIOS_PRIVADAS_DEFAULT,
+  PRECIOS_QR_DEFAULT,
   getMesActual,
   getFechasClaseMes,
   getFechasMes,
@@ -54,6 +56,8 @@ function App() {
   const [clasesPorProfe, setClasesPorProfe] = useState(() => storage.get('clases_profe') || {});
   const [precios, setPrecios] = useState(() => storage.get('precios') || PRECIOS_DEFAULT);
   const [preciosTipos, setPreciosTipos] = useState(() => storage.get('preciosTipos') || PRECIOS_TIPOS_DEFAULT);
+  const [preciosPrivadas, setPreciosPrivadas] = useState(() => storage.get('preciosPrivadas') || PRECIOS_PRIVADAS_DEFAULT);
+  const [preciosQR, setPreciosQR] = useState(() => storage.get('preciosQR') || PRECIOS_QR_DEFAULT);
 
   // UI State
   const [loading, setLoading] = useState(true);
@@ -94,6 +98,8 @@ function App() {
     setClase,
     getConfig,
     setConfig,
+    getConfigMes,
+    setConfigMes,
   } = useFirestore();
 
   // Computed
@@ -115,14 +121,17 @@ function App() {
   const cargarDatos = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [alumnosData, pagosData, asistData, clasesData, profesData, configData] = await Promise.all([
+      const [alumnosData, pagosData, asistData, clasesData, profesData, cfgGlobal, cfgMes] = await Promise.all([
         getAlumnos(),
         getPagos(mesActual),
         getAsistencias(mesActual).catch(() => []),
         getClasesMes(mesActual).catch(() => []),
         getProfesores().catch(() => []),
         getConfig().catch(() => null),
+        getConfigMes(mesActual).catch(() => null),
       ]);
+      // El config del mes tiene prioridad; el global es fallback para campos no definidos aún
+      const configData = { ...(cfgGlobal || {}), ...(cfgMes || {}) };
 
       setAlumnos(alumnosData.map(a => ({
         ...a,
@@ -147,18 +156,21 @@ function App() {
       // Lo que se filtra (en GrillaCancha y Clases) son los slots VIRTUALES derivados de diasElegidos.
       setOcupacion(clasesData);
 
-      if (configData) {
+      if (Object.keys(configData).length > 0) {
         if (configData.precios) setPrecios(configData.precios);
         if (configData.preciosTipos) setPreciosTipos(configData.preciosTipos);
-      } else {
-        // Migración: si hay valores en localStorage los subimos a Firestore
-        const localPrecios     = storage.get('precios');
-        const localPreciosTipos = storage.get('preciosTipos');
-        if (localPrecios || localPreciosTipos) {
-          setConfig({
-            ...(localPrecios      ? { precios: localPrecios }           : {}),
-            ...(localPreciosTipos ? { preciosTipos: localPreciosTipos } : {}),
-          }).catch(() => {});
+        if (configData.preciosQR) setPreciosQR(configData.preciosQR);
+        if (configData.preciosPrivadas) {
+          const pp = configData.preciosPrivadas;
+          // Migrar estructura vieja (global) a la nueva (por disciplina)
+          if (pp.privada_1p) {
+            const migrated = {};
+            DISCIPLINAS.forEach(d => { migrated[d] = { ...pp }; });
+            setPreciosPrivadas(migrated);
+            setConfigMes(mesActual, { preciosPrivadas: migrated }).catch(() => {});
+          } else {
+            setPreciosPrivadas(pp);
+          }
         }
       }
 
@@ -183,7 +195,7 @@ function App() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [getAlumnos, getPagos, getAsistencias, getClasesMes, getProfesores, getConfig, mesActual]);
+  }, [getAlumnos, getPagos, getAsistencias, getClasesMes, getProfesores, getConfig, getConfigMes, mesActual]);
 
   useEffect(() => {
     if (autenticado) cargarDatos();
@@ -440,31 +452,57 @@ function App() {
       if (slotPrivada) {
         const fechaCompleta = `${fecha}/${anio}`;
         const alumno = alumnos.find(a => a.id === alumnoId);
+        const fechaKey = `${fecha}|${horario}`;
+        const slotAlumnos = slotPrivada.alumnos || [];
+        const disciplinaSlot = slotPrivada.disciplina || disciplinaActiva;
+
         if (nuevoEstado === 'cambio_turno') {
-          // Canceló con aviso → borrar deuda
+          // Canceló con aviso → borrar su deuda y recalcular los restantes
           const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
-          if (pendientes.length > 0) {
-            await Promise.all(pendientes.map(p => deletePago(p.id)));
-            await cargarDatos(true);
+          await Promise.all(pendientes.map(p => deletePago(p.id)));
+          const efectivos = slotAlumnos.filter(id => {
+            if (id === alumnoId) return false;
+            return asistencias[id]?.[fechaKey] !== 'cambio_turno';
+          });
+          if (efectivos.length > 0) {
+            const n = Math.min(efectivos.length, 4);
+            await Promise.all(efectivos.map(async (id) => {
+              const pends = await getPagosPendientesPorTipo(id, 'privada', fechaCompleta, horario);
+              if (pends.length > 0) {
+                const monto = getMontoPrivada(n, pends[0].metodo || 'Efectivo', disciplinaSlot);
+                await Promise.all(pends.map(p => updatePago(p.id, { monto })));
+              }
+            }));
           }
+          await cargarDatos(true);
         } else if (nuevoEstado === null) {
-          // Toggle off → recrear deuda si no existe (venía de cambio_turno)
+          // Toggle off → recrear deuda si no existe (venía de cambio_turno) y recalcular todos
           const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
           if (pendientes.length === 0 && alumno) {
-            const disciplina = slotPrivada.disciplina || disciplinaActiva;
-            const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases privadas'] || 0;
+            const efectivos = slotAlumnos.filter(id => {
+              if (id === alumnoId) return true;
+              return asistencias[id]?.[fechaKey] !== 'cambio_turno';
+            });
+            const n = Math.min(Math.max(efectivos.length, 1), 4);
             await addPago({
               alumnoId,
               nombre: alumno.nombre,
               mes: mesActual,
-              monto,
+              monto: getMontoPrivada(n, 'Efectivo', disciplinaSlot),
               estado: 'Pendiente',
               metodo: 'Efectivo',
-              disciplina,
+              disciplina: disciplinaSlot,
               tipo: 'privada',
               fecha: fechaCompleta,
               horario,
             });
+            await Promise.all(efectivos.filter(id => id !== alumnoId).map(async (id) => {
+              const pends = await getPagosPendientesPorTipo(id, 'privada', fechaCompleta, horario);
+              if (pends.length > 0) {
+                const monto = getMontoPrivada(n, pends[0].metodo || 'Efectivo', disciplinaSlot);
+                await Promise.all(pends.map(p => updatePago(p.id, { monto })));
+              }
+            }));
             await cargarDatos(true);
           }
         }
@@ -609,7 +647,9 @@ function App() {
     );
     if (existe) return { success: false, mensaje: `${alumno.nombre} ya pagó ${mes}` };
 
-    const monto = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 95000;
+    const montoBase = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 95000;
+    const montoQR = preciosQR[disciplinaActiva]?.[alumno.plan]?.[alumno.frecuencia] || Math.round(montoBase * 1.25);
+    const monto = metodo === 'Transferencia' ? montoQR : montoBase;
     setSyncing(true);
     try {
       await addPago({
@@ -753,7 +793,9 @@ function App() {
   };
 
   const handlePagarMembresia = async (alumno, metodo) => {
-    const monto = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
+    const montoBase = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
+    const montoQR = preciosQR[disciplinaActiva]?.[alumno.plan]?.[alumno.frecuencia] || Math.round(montoBase * 1.25);
+    const monto = metodo === 'Transferencia' ? montoQR : montoBase;
     setSyncing(true);
     try {
       await addPago({
@@ -780,7 +822,13 @@ function App() {
   const handleMarcarPagado = async (pagoId, metodo) => {
     setSyncing(true);
     try {
-      await updatePago(pagoId, { estado: 'Pagado', metodo });
+      const pagoActual = pagos.find(p => p.id === pagoId);
+      const montoFinal = pagoActual && metodo === 'Transferencia'
+        ? Math.round(pagoActual.monto * 1.25)
+        : pagoActual?.monto;
+      const update = { estado: 'Pagado', metodo };
+      if (montoFinal !== undefined) update.monto = montoFinal;
+      await updatePago(pagoId, update);
       await cargarDatos(true);
       return { success: true };
     } catch (err) {
@@ -798,7 +846,7 @@ function App() {
         alumnoId: pago.alumnoId,
         nombre: pago.nombre,
         mes: mesActual,
-        monto: pago.monto,
+        monto: metodo === 'Transferencia' ? Math.round(pago.monto * 1.25) : pago.monto,
         estado: 'Pagado',
         metodo,
         disciplina: pago.disciplina || disciplinaActiva,
@@ -832,9 +880,45 @@ function App() {
         ...prev,
         [disciplina]: { ...prev[disciplina], [tipo]: parseInt(valor) || 0 }
       };
-      setConfig({ preciosTipos: next }).catch(() => {});
+      setConfigMes(mesActual, { preciosTipos: next }).catch(() => {});
       return next;
     });
+  };
+
+  const handleUpdatePreciosPrivadas = (disciplina, numPersonas, metodo, valor) => {
+    setPreciosPrivadas(prev => {
+      const key = `privada_${numPersonas}p`;
+      const next = {
+        ...prev,
+        [disciplina]: {
+          ...(prev[disciplina] || {}),
+          [key]: { ...(prev[disciplina]?.[key] || {}), [metodo]: parseInt(valor) || 0 },
+        },
+      };
+      setConfigMes(mesActual, { preciosPrivadas: next }).catch(() => {});
+      return next;
+    });
+  };
+
+  const handleUpdatePreciosQR = (disciplina, plan, frecuencia, valor) => {
+    setPreciosQR(prev => {
+      const next = {
+        ...prev,
+        [disciplina]: {
+          ...prev[disciplina],
+          [plan]: { ...prev[disciplina]?.[plan], [frecuencia]: parseInt(valor) || 0 },
+        },
+      };
+      setConfigMes(mesActual, { preciosQR: next }).catch(() => {});
+      return next;
+    });
+  };
+
+  const getMontoPrivada = (n, metodo = 'Efectivo', disciplina = disciplinaActiva) => {
+    const key = `privada_${Math.min(Math.max(n, 1), 4)}p`;
+    return preciosPrivadas[disciplina]?.[key]?.[metodo]
+      ?? preciosPrivadas['Futvoley']?.[key]?.[metodo]
+      ?? 0;
   };
 
   // Llena los cupos del mes para TODOS los alumnos activos con diasElegidos
@@ -898,19 +982,19 @@ function App() {
         if (alumno) {
           const slot = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario);
           const disciplina = slot?.disciplina || disciplinaActiva;
-          const monto = (preciosTipos[disciplina] || preciosTipos['Futvoley'] || {})['Clases privadas'] || 0;
           const fechaCompleta = `${fecha}/${anio}`;
-          const existente = pagos.find(p =>
-            p.alumnoId === alumnoId && p.tipo === 'privada' &&
-            p.fecha === fechaCompleta && p.horario === horario &&
-            ['Pendiente', 'Pagado'].includes(p.estado)
-          );
-          if (!existente) {
+          // slot.alumnos es la lista ANTES de agregar (ocupacion state aún no refrescado)
+          const prevAlumnos = slot?.alumnos || [];
+          const nuevosAlumnos = prevAlumnos.includes(alumnoId) ? prevAlumnos : [...prevAlumnos, alumnoId];
+          const n = Math.min(nuevosAlumnos.length, 4);
+          // Consultar Firestore directamente para evitar duplicados por estado local desactualizado
+          const existentes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
+          if (existentes.length === 0) {
             await addPago({
               alumnoId: alumno.id,
               nombre: alumno.nombre,
               mes: mesActual,
-              monto,
+              monto: getMontoPrivada(n, 'Efectivo', disciplina),
               estado: 'Pendiente',
               metodo: 'Efectivo',
               disciplina,
@@ -919,6 +1003,14 @@ function App() {
               horario,
             });
           }
+          // Recalcular deudas de los alumnos que ya estaban en el slot
+          await Promise.all(prevAlumnos.map(async (id) => {
+            const pends = await getPagosPendientesPorTipo(id, 'privada', fechaCompleta, horario);
+            if (pends.length > 0) {
+              const monto = getMontoPrivada(n, pends[0].metodo || 'Efectivo', disciplina);
+              await Promise.all(pends.map(p => updatePago(p.id, { monto })));
+            }
+          }));
           await cargarDatos(true);
           return;
         }
@@ -991,8 +1083,21 @@ function App() {
 
       const slotRemovido = ocupacion.find(s => s.canchaId === canchaId && s.fecha === fecha && s.horario === horario);
       if (slotRemovido?.tipo === 'privada') {
+        const disciplinaSlot = slotRemovido.disciplina || disciplinaActiva;
         const pendientes = await getPagosPendientesPorTipo(alumnoId, 'privada', fechaCompleta, horario);
         await Promise.all(pendientes.map(p => deletePago(p.id)));
+        // Recalcular deudas de los restantes
+        const remaining = (slotRemovido.alumnos || []).filter(id => id !== alumnoId);
+        if (remaining.length > 0) {
+          const n = Math.min(remaining.length, 4);
+          await Promise.all(remaining.map(async (id) => {
+            const pends = await getPagosPendientesPorTipo(id, 'privada', fechaCompleta, horario);
+            if (pends.length > 0) {
+              const monto = getMontoPrivada(n, pends[0].metodo || 'Efectivo', disciplinaSlot);
+              await Promise.all(pends.map(p => updatePago(p.id, { monto })));
+            }
+          }));
+        }
       }
 
       await cargarDatos(true);
@@ -1025,7 +1130,7 @@ function App() {
           [plan]: { ...prev[disciplina]?.[plan], [frecuencia]: valor }
         }
       };
-      setConfig({ precios: next }).catch(() => {});
+      setConfigMes(mesActual, { precios: next }).catch(() => {});
       return next;
     });
   };
@@ -1355,10 +1460,15 @@ function App() {
           {seccionActiva === 'configuracion' && (
             <Configuracion
               disciplinaActiva={disciplinaActiva}
+              mesActual={mesActual}
               precios={precios}
               onUpdatePrecios={handleUpdatePrecios}
+              preciosQR={preciosQR}
+              onUpdatePreciosQR={handleUpdatePreciosQR}
               preciosTipos={preciosTipos}
               onUpdatePrecioTipo={handleUpdatePrecioTipo}
+              preciosPrivadas={preciosPrivadas}
+              onUpdatePreciosPrivadas={handleUpdatePreciosPrivadas}
             />
           )}
 
