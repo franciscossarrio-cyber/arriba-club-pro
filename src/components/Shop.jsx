@@ -3,7 +3,7 @@ import { httpsCallable } from 'firebase/functions';
 import Icon from './Icon';
 import { formatMonto } from '../utils/helpers';
 import { functions } from '../firebase/config';
-import { generarFacturaPDF } from '../utils/facturasPDF';
+import { generarFacturaPDF, imprimirRecibo80mm } from '../utils/facturasPDF';
 import {
   getProductos, addProducto, updateProducto, deleteProducto,
   getFacturas, addFactura,
@@ -163,6 +163,7 @@ const Shop = () => {
 
       setFacturas(prev => [emitida, ...prev.filter(f => f.id !== id)]);
       setFacturaModal(emitida);
+      imprimirRecibo80mm(emitida).catch(() => {});
     } catch (err) {
       const msg = err.message ?? 'Error desconocido';
       setFacturas(prev => {
@@ -454,14 +455,20 @@ const Shop = () => {
                   </div>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0">
-                  {f.estado === 'enviada' && (
+                  {f.estado === 'enviada' && (<>
+                    <button onClick={() => imprimirRecibo80mm(f)}
+                      className="p-2 bg-primary/10 hover:bg-primary/20 rounded-xl text-primary transition-colors"
+                      title="Reimprimir ticket"
+                    >
+                      <Icon name="print" size={18} />
+                    </button>
                     <button onClick={() => generarFacturaPDF(f)}
                       className="p-2 bg-primary/10 hover:bg-primary/20 rounded-xl text-primary transition-colors"
                       title="Descargar PDF"
                     >
                       <Icon name="download" size={18} />
                     </button>
-                  )}
+                  </>)}
                   {(f.estado === 'borrador' || f.estado === 'error') && (
                     <button onClick={() => setFacturaModal(f)}
                       className="p-2 bg-amber-100 hover:bg-amber-200 rounded-xl text-amber-700 transition-colors"
@@ -685,10 +692,15 @@ const Shop = () => {
                     <span>Vence</span><span>{facturaModal.caeFchVto}</span>
                   </div>
                 </div>
-                <button onClick={() => generarFacturaPDF(facturaModal)}
+                <button onClick={() => imprimirRecibo80mm(facturaModal)}
                   className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
                 >
-                  <Icon name="download" size={18} /> Descargar PDF
+                  <Icon name="print" size={18} /> Imprimir ticket
+                </button>
+                <button onClick={() => generarFacturaPDF(facturaModal)}
+                  className="w-full py-2.5 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  <Icon name="download" size={16} /> Descargar PDF A4
                 </button>
               </div>
             )}

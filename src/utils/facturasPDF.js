@@ -176,3 +176,79 @@ export async function generarFacturaPDF(factura) {
   const nro = `${padNro(factura.arcaPayload?.PtoVta, 4)}-${padNro(factura.nroComprobante, 8)}`;
   doc.save(`Factura-${letra}${nro}.pdf`);
 }
+
+export async function imprimirRecibo80mm(factura) {
+  const letra = TIPO_CBT[factura.arcaPayload?.CbteTipo] ?? 'B';
+  const nro   = `${padNro(factura.arcaPayload?.PtoVta, 4)}-${padNro(factura.nroComprobante, 8)}`;
+
+  let qrImg = '';
+  try {
+    const qrUrl = buildQrUrl(factura);
+    qrImg = await QRCode.toDataURL(qrUrl, { width: 160, margin: 1 });
+  } catch (e) {
+    console.warn('QR error:', e);
+  }
+
+  const itemsHtml = (factura.items ?? []).map(item => `
+    <tr>
+      <td style="padding:2px 0">${item.cantidad}x ${item.nombre}</td>
+      <td style="text-align:right;padding:2px 0">$${(item.precio * item.cantidad).toLocaleString('es-AR')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: 80mm auto; margin: 3mm 4mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Courier New', monospace; font-size: 11px; color: #000; width: 72mm; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .sep { border: none; border-top: 1px dashed #000; margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { vertical-align: top; }
+  .total-row td { font-size: 14px; font-weight: bold; padding-top: 4px; }
+  .cae { font-size: 9px; word-break: break-all; }
+  .qr { text-align: center; margin: 6px 0; }
+  .qr img { width: 80px; height: 80px; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="center bold" style="font-size:13px">${EMISOR.razonSocial}</div>
+<div class="center" style="font-size:9px">${EMISOR.domicilio}</div>
+<div class="center" style="font-size:9px">CUIT: ${EMISOR.cuit}</div>
+<div class="center" style="font-size:9px">IVA: ${EMISOR.condIva}</div>
+<hr class="sep">
+<div class="center bold" style="font-size:15px">FACTURA ${letra}</div>
+<div class="center" style="font-size:9px">Nro: ${nro}</div>
+<div class="center" style="font-size:9px">Fecha: ${factura.fecha}</div>
+<hr class="sep">
+<table>${itemsHtml}</table>
+<hr class="sep">
+<table>
+  <tr><td>Neto gravado</td><td style="text-align:right">$${(factura.neto ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>
+  <tr><td>IVA</td><td style="text-align:right">$${(factura.ivaTotal ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>
+  <tr class="total-row"><td>TOTAL</td><td style="text-align:right">$${(factura.total ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>
+</table>
+<hr class="sep">
+<div class="cae">CAE: ${factura.cae ?? ''}</div>
+<div class="cae">Vence: ${factura.caeFchVto ?? ''}</div>
+${qrImg ? `<div class="qr"><img src="${qrImg}" alt="QR AFIP"></div>` : ''}
+<div class="center" style="font-size:8px;margin-top:4px">Gracias por tu compra!</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=320,height=600');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => {
+    win.focus();
+    win.print();
+    win.onafterprint = () => win.close();
+  };
+}
