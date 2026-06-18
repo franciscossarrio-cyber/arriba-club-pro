@@ -242,7 +242,10 @@ ${qrImg ? `<div class="qr"><img src="${qrImg}" alt="QR AFIP"></div>` : ''}
 </body>
 </html>`;
 
-  const win = window.open('', '_blank', 'width=320,height=600');
+  const winWidth = 320, winHeight = 600;
+  const left = Math.max(0, Math.round((window.screen.width - winWidth) / 2));
+  const top  = Math.max(0, Math.round((window.screen.height - winHeight) / 2));
+  const win = window.open('', '_blank', `width=${winWidth},height=${winHeight},left=${left},top=${top}`);
   if (!win) return;
   win.document.write(html);
   win.document.close();

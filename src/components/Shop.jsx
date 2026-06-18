@@ -642,89 +642,72 @@ const Shop = () => {
       {facturaModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="font-black text-on-surface">
-                {facturaModal.estado === 'enviada' ? '¡Factura emitida!' : 'Factura'}
-              </h3>
-              <button onClick={() => setFacturaModal(null)} className="p-2 hover:bg-surface-container-high rounded-xl">
-                <Icon name="close" size={20} />
-              </button>
-            </div>
-
-            {/* Ítems */}
-            <div className="space-y-1.5">
-              {facturaModal.items?.map((item, i) => (
-                <div key={i} className="flex justify-between text-sm">
-                  <span className="text-on-surface-variant">{item.cantidad}× {item.nombre}</span>
-                  <span className="font-bold">{formatMonto(item.precio * item.cantidad)}</span>
+            {facturaModal.estado === 'enviada' ? (
+              /* Confirmación simple: mensaje + total — el ticket ya se imprime solo */
+              <div className="text-center space-y-3 py-2">
+                <div className="w-14 h-14 mx-auto rounded-full bg-success/10 flex items-center justify-center">
+                  <Icon name="verified" size={32} className="text-success" filled />
                 </div>
-              ))}
-              <div className="pt-2 border-t border-outline/10 space-y-1">
-                <div className="flex justify-between text-xs text-on-surface-variant">
-                  <span>Neto gravado</span><span>{formatMonto(facturaModal.neto)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-on-surface-variant">
-                  <span>IVA</span><span>{formatMonto(facturaModal.ivaTotal)}</span>
-                </div>
-                <div className="flex justify-between font-black text-lg">
-                  <span>Total</span>
-                  <span className="text-primary">{formatMonto(facturaModal.total)}</span>
-                </div>
+                <h3 className="font-black text-lg text-on-surface">¡Factura emitida!</h3>
+                <p className="text-xs text-on-surface-variant">
+                  Nro {String(facturaModal.nroComprobante ?? '').padStart(8, '0')}
+                </p>
+                <p className="text-3xl font-black text-primary">{formatMonto(facturaModal.total)}</p>
+                <button onClick={() => setFacturaModal(null)}
+                  className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-colors mt-2"
+                >Cerrar</button>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-on-surface">Factura</h3>
+                  <button onClick={() => setFacturaModal(null)} className="p-2 hover:bg-surface-container-high rounded-xl">
+                    <Icon name="close" size={20} />
+                  </button>
+                </div>
 
-            {/* Emitida */}
-            {facturaModal.estado === 'enviada' && (
-              <div className="space-y-3">
-                <div className="bg-success/10 rounded-2xl p-4 space-y-2 text-sm">
-                  <div className="flex items-center gap-2 font-bold text-success">
-                    <Icon name="verified" size={18} filled /> Comprobante autorizado por AFIP
-                  </div>
-                  <div className="flex justify-between text-on-surface-variant">
-                    <span>Nro comprobante</span>
-                    <span className="font-bold">{String(facturaModal.nroComprobante ?? '').padStart(8, '0')}</span>
-                  </div>
-                  <div className="flex justify-between text-on-surface-variant">
-                    <span>CAE</span>
-                    <span className="font-mono font-bold text-xs">{facturaModal.cae}</span>
-                  </div>
-                  <div className="flex justify-between text-on-surface-variant">
-                    <span>Vence</span><span>{facturaModal.caeFchVto}</span>
+                {/* Ítems */}
+                <div className="space-y-1.5">
+                  {facturaModal.items?.map((item, i) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="text-on-surface-variant">{item.cantidad}× {item.nombre}</span>
+                      <span className="font-bold">{formatMonto(item.precio * item.cantidad)}</span>
+                    </div>
+                  ))}
+                  <div className="pt-2 border-t border-outline/10 space-y-1">
+                    <div className="flex justify-between text-xs text-on-surface-variant">
+                      <span>Neto gravado</span><span>{formatMonto(facturaModal.neto)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-on-surface-variant">
+                      <span>IVA</span><span>{formatMonto(facturaModal.ivaTotal)}</span>
+                    </div>
+                    <div className="flex justify-between font-black text-lg">
+                      <span>Total</span>
+                      <span className="text-primary">{formatMonto(facturaModal.total)}</span>
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => imprimirRecibo80mm(facturaModal)}
-                  className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="print" size={18} /> Imprimir ticket
-                </button>
-                <button onClick={() => generarFacturaPDF(facturaModal)}
-                  className="w-full py-2.5 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center gap-2 text-sm"
-                >
-                  <Icon name="download" size={16} /> Descargar PDF A4
-                </button>
-              </div>
+
+                {/* Borrador / retry */}
+                <div className="space-y-3">
+                  {facturaModal.errorMsg && (
+                    <div className="bg-error/10 rounded-xl p-3 text-xs text-error">{facturaModal.errorMsg}</div>
+                  )}
+                  <button onClick={() => handleReintentar(facturaModal.id)} disabled={enviando}
+                    className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {enviando
+                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Enviando...</>
+                      : <><Icon name="send" size={18} /> Reintentar envío a AFIP</>
+                    }
+                  </button>
+                </div>
+
+                <button onClick={() => setFacturaModal(null)}
+                  className="w-full py-3 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container transition-colors"
+                >Cerrar</button>
+              </>
             )}
-
-            {/* Borrador / retry */}
-            {(facturaModal.estado === 'borrador' || facturaModal.estado === 'error') && (
-              <div className="space-y-3">
-                {facturaModal.errorMsg && (
-                  <div className="bg-error/10 rounded-xl p-3 text-xs text-error">{facturaModal.errorMsg}</div>
-                )}
-                <button onClick={() => handleReintentar(facturaModal.id)} disabled={enviando}
-                  className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
-                >
-                  {enviando
-                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Enviando...</>
-                    : <><Icon name="send" size={18} /> Reintentar envío a AFIP</>
-                  }
-                </button>
-              </div>
-            )}
-
-            <button onClick={() => setFacturaModal(null)}
-              className="w-full py-3 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container transition-colors"
-            >Cerrar</button>
           </div>
         </div>
       )}
