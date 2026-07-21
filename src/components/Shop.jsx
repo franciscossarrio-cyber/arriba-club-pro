@@ -10,19 +10,24 @@ import {
   getConfigArca, setConfigArca,
 } from '../firebase/firestore';
 
-const fnGenerarCSR    = httpsCallable(functions, 'generarCSR');
-const fnEmitirFactura = httpsCallable(functions, 'emitirFactura');
+const fnGenerarCSR        = httpsCallable(functions, 'generarCSR');
+const fnEmitirFactura     = httpsCallable(functions, 'emitirFactura');
+const fnEmitirNotaCredito = httpsCallable(functions, 'emitirNotaCredito');
 
 const CATEGORIAS  = ['General', 'Indumentaria', 'Equipamiento', 'Bebidas', 'Suplementos', 'Servicios', 'Otro'];
 const IVA_OPCIONES = [0, 10.5, 21, 27];
 const ivaIdMap = (pct) => ({ 0: 3, 10.5: 4, 21: 5, 27: 6 }[pct] ?? 5);
 
 const TABS = [
-  { id: 'cobrar',   icon: 'point_of_sale', label: 'Cobrar'      },
-  { id: 'productos',icon: 'inventory_2',   label: 'Productos'   },
-  { id: 'historial',icon: 'history',       label: 'Historial'   },
-  { id: 'config',   icon: 'key',           label: 'Config ARCA' },
+  { id: 'cobrar',        icon: 'point_of_sale', label: 'Cobrar'          },
+  { id: 'productos',     icon: 'inventory_2',   label: 'Productos'       },
+  { id: 'historial',     icon: 'history',       label: 'Historial'       },
+  { id: 'nota_credito',  icon: 'undo',          label: 'Nota de Crédito' },
+  { id: 'config',        icon: 'key',           label: 'Config ARCA'     },
 ];
+
+const NC_TIPO_MAP   = { 1: 3, 6: 8, 11: 13 };
+const LETRA_MAP     = { 1: 'A', 3: 'A', 6: 'B', 8: 'B', 11: 'C', 13: 'C' };
 
 const PRODUCTO_VACIO = { nombre: '', precio: '', iva: 21, categoria: 'General', descripcion: '' };
 
@@ -33,6 +38,9 @@ const ESTADO_COLOR = {
   error:   'bg-error/10 text-error',
 };
 
+const hoy = () => new Date().toISOString().slice(0, 10);
+const isoToDisplay = (iso) => iso.split('-').reverse().join('/');
+
 // ─── Componente principal ──────────────────────────────────────────────────────
 const Shop = () => {
   const [tab, setTab] = useState('cobrar');
@@ -42,8 +50,9 @@ const Shop = () => {
   const [facturas,   setFacturas]       = useState([]);
 
   // Carrito
-  const [items,      setItems]          = useState([]);
-  const [cobrando,   setCobrando]       = useState(false);
+  const [items,        setItems]        = useState([]);
+  const [cobrando,     setCobrando]     = useState(false);
+  const [fechaFactura, setFechaFactura] = useState(hoy);
 
   // Producto form
   const [showForm,      setShowForm]    = useState(false);
@@ -56,6 +65,11 @@ const Shop = () => {
 
   // Retry desde historial
   const [enviando, setEnviando] = useState(false);
+
+  // Nota de Crédito
+  const [ncModal,     setNcModal]     = useState(null);
+  const [emitiendoNC, setEmitiendoNC] = useState(false);
+  const [fechaNC,     setFechaNC]     = useState(hoy);
 
   // Config ARCA
   const [arcaForm,     setArcaForm]     = useState({ cuit: '', ptoVta: 1, cert: '', key: '' });
@@ -85,7 +99,7 @@ const Shop = () => {
   const addItem = (producto) => {
     setItems(prev => {
       const existing = prev.find(i => i.productoId === producto.id);
-      if (existing) return prev.map(i => i.productoId === producto.id ? { ...i, cantidad: i.cantidad + 1 } : i);
+      if (existing) return prev.filter(i => i.productoId !== producto.id);
       return [...prev, { productoId: producto.id, nombre: producto.nombre, precio: producto.precio, iva: producto.iva ?? 21, cantidad: 1 }];
     });
   };
@@ -107,7 +121,8 @@ const Shop = () => {
     return { neto, ivaTotal, total: neto + ivaTotal };
   };
 
-  const buildArcaPayload = (totales, itemList = items, ptoVta = arcaForm.ptoVta) => {
+  const buildArcaPayload = (totales, itemList = items, ptoVta = arcaForm.ptoVta, fechaISO) => {
+    const fecha = fechaISO || hoy();
     const ivaMap = {};
     itemList.forEach(({ precio, cantidad, iva }) => {
       const sub  = precio * cantidad;
@@ -123,7 +138,7 @@ const Shop = () => {
       Concepto:   1,
       DocTipo:    99,
       DocNro:     0,
-      CbteFch:    new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+      CbteFch:    fecha.replace(/-/g, ''),
       ImpTotal:   parseFloat(totales.total.toFixed(2)),
       ImpNeto:    parseFloat(totales.neto.toFixed(2)),
       ImpIVA:     parseFloat(totales.ivaTotal.toFixed(2)),
@@ -145,17 +160,18 @@ const Shop = () => {
     const totales  = calcTotales(snapshot);
     try {
       const factura = {
-        fecha:       new Date().toLocaleDateString('es-AR'),
+        fecha:       isoToDisplay(fechaFactura),
         cliente:     { nombre: 'Consumidor Final', tipoDoc: 99, docNum: '' },
         items:       snapshot,
         neto:        totales.neto,
         ivaTotal:    totales.ivaTotal,
         total:       totales.total,
-        arcaPayload: buildArcaPayload(totales, snapshot),
+        arcaPayload: buildArcaPayload(totales, snapshot, arcaForm.ptoVta, fechaFactura),
         estado:      'borrador',
       };
       const id = await addFactura(factura);
       setItems([]);
+      setFechaFactura(hoy());
 
       const res = await fnEmitirFactura({ facturaId: id });
       const { cae, caeFchVto, nroComprobante } = res.data;
@@ -193,6 +209,50 @@ const Shop = () => {
       alert('Error ARCA: ' + err.message);
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // ── Nota de Crédito ────────────────────────────────────────────────────────
+  const handleEmitirNC = async () => {
+    if (!ncModal) return;
+    setEmitiendoNC(true);
+    try {
+      const res = await fnEmitirNotaCredito({ facturaId: ncModal.id, fechaISO: fechaNC });
+      const { notaCreditoId, cae, caeFchVto, nroComprobante } = res.data;
+
+      const ncCbteTipo = NC_TIPO_MAP[ncModal.arcaPayload?.CbteTipo] ?? 8;
+      const ncDoc = {
+        id:                notaCreditoId,
+        tipo:              'nota_credito',
+        facturaOriginalId: ncModal.id,
+        fecha:             isoToDisplay(fechaNC),
+        cliente:           ncModal.cliente,
+        items:             ncModal.items,
+        neto:              ncModal.neto,
+        ivaTotal:          ncModal.ivaTotal,
+        total:             ncModal.total,
+        arcaPayload: {
+          ...ncModal.arcaPayload,
+          CbteTipo:  ncCbteTipo,
+          CbtesAsoc: [{ Tipo: ncModal.arcaPayload.CbteTipo, PtoVta: ncModal.arcaPayload.PtoVta, Nro: ncModal.nroComprobante }],
+        },
+        estado:         'enviada',
+        cae,
+        caeFchVto,
+        nroComprobante,
+      };
+
+      setFacturas(prev => [
+        ncDoc,
+        ...prev.map(f => f.id === ncModal.id ? { ...f, notaCreditoId } : f),
+      ]);
+      setNcModal(null);
+      setFacturaModal(ncDoc);
+      imprimirRecibo80mm(ncDoc).catch(() => {});
+    } catch (err) {
+      alert('Error al emitir NC: ' + err.message);
+    } finally {
+      setEmitiendoNC(false);
     }
   };
 
@@ -352,6 +412,13 @@ const Shop = () => {
                     <span>Total</span>
                     <span className="text-primary">{formatMonto(total)}</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-on-surface-variant whitespace-nowrap">Fecha</label>
+                    <input type="date" value={fechaFactura}
+                      onChange={e => setFechaFactura(e.target.value)}
+                      className="flex-1 px-3 py-1.5 bg-surface-container border-2 border-transparent rounded-xl focus:border-primary outline-none text-sm"
+                    />
+                  </div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => setItems([])}
                       className="p-3 rounded-xl border-2 border-outline/20 hover:bg-surface-container transition-colors"
@@ -486,6 +553,111 @@ const Shop = () => {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── TAB: NOTA DE CRÉDITO ────────────────────────────────────────────── */}
+      {tab === 'nota_credito' && (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-800">
+            Seleccioná una factura emitida para generar la Nota de Crédito que la anula totalmente.
+          </div>
+
+          {/* Facturas disponibles */}
+          {(() => {
+            const disponibles = facturas.filter(f => f.tipo !== 'nota_credito' && f.estado === 'enviada');
+            if (disponibles.length === 0) return (
+              <div className="text-center py-16 text-on-surface-variant">
+                <Icon name="undo" size={48} className="opacity-20 mb-3" />
+                <p className="font-medium">Sin facturas emitidas</p>
+                <p className="text-sm opacity-60">Las facturas cobradas aparecen acá</p>
+              </div>
+            );
+            return (
+              <div className="space-y-2">
+                {disponibles.map(f => {
+                  const tieneNC = !!f.notaCreditoId;
+                  return (
+                    <div key={f.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Icon name="receipt_long" className="text-primary" size={20} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-on-surface">{formatMonto(f.total)}</span>
+                            <span className="text-xs text-on-surface-variant">
+                              Nro {String(f.nroComprobante ?? '').padStart(8, '0')}
+                            </span>
+                            {tieneNC && (
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700">
+                                NC emitida
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-on-surface-variant mt-0.5">
+                            {f.fecha} · {f.items?.length ?? 0} ítem{(f.items?.length ?? 0) !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                        {!tieneNC && (
+                          <button onClick={() => { setNcModal(f); setFechaNC(hoy()); }}
+                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-xl text-sm font-bold transition-colors"
+                          >
+                            <Icon name="undo" size={16} /> NC
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* NCs emitidas */}
+          {(() => {
+            const ncs = facturas.filter(f => f.tipo === 'nota_credito' && f.estado === 'enviada');
+            if (ncs.length === 0) return null;
+            return (
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase text-outline tracking-wide px-1">Notas de Crédito emitidas</p>
+                {ncs.map(nc => (
+                  <div key={nc.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <Icon name="undo" className="text-amber-600" size={20} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-on-surface">{formatMonto(nc.total)}</span>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700">
+                            Nota de Crédito {LETRA_MAP[nc.arcaPayload?.CbteTipo] ?? 'B'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-on-surface-variant mt-0.5">
+                          {nc.fecha} · Nro {String(nc.nroComprobante ?? '').padStart(8, '0')}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <button onClick={() => imprimirRecibo80mm(nc)}
+                          className="p-2 bg-primary/10 hover:bg-primary/20 rounded-xl text-primary transition-colors"
+                          title="Reimprimir ticket"
+                        >
+                          <Icon name="print" size={18} />
+                        </button>
+                        <button onClick={() => generarFacturaPDF(nc)}
+                          className="p-2 bg-primary/10 hover:bg-primary/20 rounded-xl text-primary transition-colors"
+                          title="Descargar PDF"
+                        >
+                          <Icon name="download" size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -638,6 +810,68 @@ const Shop = () => {
         </div>
       )}
 
+      {/* ── Modal: confirmación Nota de Crédito ─────────────────────────────── */}
+      {ncModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <Icon name="undo" size={28} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-black text-on-surface">Nota de Crédito {LETRA_MAP[NC_TIPO_MAP[ncModal.arcaPayload?.CbteTipo]] ?? 'B'}</h3>
+                <p className="text-sm text-on-surface-variant">Anula la factura original en ARCA</p>
+              </div>
+            </div>
+
+            <div className="bg-surface-container rounded-2xl p-4 space-y-2.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-on-surface-variant">Factura Nro</span>
+                <span className="font-bold">{String(ncModal.nroComprobante ?? '').padStart(8, '0')}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-on-surface-variant">Fecha original</span>
+                <span>{ncModal.fecha}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-on-surface-variant">Ítems</span>
+                <span>{ncModal.items?.map(i => `${i.cantidad}× ${i.nombre}`).join(', ')}</span>
+              </div>
+              <div className="border-t border-outline/10 pt-2 flex justify-between font-black text-base">
+                <span className="text-on-surface-variant">Monto a acreditar</span>
+                <span className="text-amber-600">{formatMonto(ncModal.total)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-bold text-on-surface-variant whitespace-nowrap">Fecha NC</label>
+              <input type="date" value={fechaNC}
+                onChange={e => setFechaNC(e.target.value)}
+                className="flex-1 px-3 py-2 bg-surface-container border-2 border-transparent rounded-xl focus:border-primary outline-none text-sm"
+              />
+            </div>
+
+            <p className="text-xs text-on-surface-variant bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              Se emitirá una Nota de Crédito por el total de la factura. Esta acción no se puede deshacer.
+            </p>
+
+            <div className="flex gap-3">
+              <button onClick={() => setNcModal(null)} disabled={emitiendoNC}
+                className="flex-1 py-3 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container disabled:opacity-50 transition-colors"
+              >Cancelar</button>
+              <button onClick={handleEmitirNC} disabled={emitiendoNC}
+                className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+              >
+                {emitiendoNC
+                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Emitiendo...</>
+                  : <><Icon name="undo" size={18} /> Emitir NC</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal: resultado de factura ──────────────────────────────────────── */}
       {facturaModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -645,17 +879,24 @@ const Shop = () => {
             {facturaModal.estado === 'enviada' ? (
               /* Confirmación simple: mensaje + total — el ticket ya se imprime solo */
               <div className="text-center space-y-3 py-2">
-                <div className="w-14 h-14 mx-auto rounded-full bg-success/10 flex items-center justify-center">
-                  <Icon name="verified" size={32} className="text-success" filled />
+                <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center ${facturaModal.tipo === 'nota_credito' ? 'bg-amber-100' : 'bg-success/10'}`}>
+                  <Icon name="verified" size={32} className={facturaModal.tipo === 'nota_credito' ? 'text-amber-600' : 'text-success'} filled />
                 </div>
-                <h3 className="font-black text-lg text-on-surface">¡Factura emitida!</h3>
+                <h3 className="font-black text-lg text-on-surface">
+                  {facturaModal.tipo === 'nota_credito' ? '¡Nota de Crédito emitida!' : '¡Factura emitida!'}
+                </h3>
                 <p className="text-xs text-on-surface-variant">
                   Nro {String(facturaModal.nroComprobante ?? '').padStart(8, '0')}
                 </p>
-                <p className="text-3xl font-black text-primary">{formatMonto(facturaModal.total)}</p>
-                <button onClick={() => setFacturaModal(null)}
-                  className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-colors mt-2"
-                >Cerrar</button>
+                <p className={`text-3xl font-black ${facturaModal.tipo === 'nota_credito' ? 'text-amber-600' : 'text-primary'}`}>{formatMonto(facturaModal.total)}</p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => imprimirRecibo80mm(facturaModal)}
+                    className="flex-1 py-3 border-2 border-outline/20 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
+                  ><Icon name="print" size={18} /> Reimprimir</button>
+                  <button onClick={() => setFacturaModal(null)}
+                    className={`flex-1 py-3 text-white rounded-xl font-bold transition-colors ${facturaModal.tipo === 'nota_credito' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary hover:bg-primary/90'}`}
+                  >Cerrar</button>
+                </div>
               </div>
             ) : (
               <>

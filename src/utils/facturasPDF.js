@@ -10,8 +10,9 @@ const EMISOR = {
   condIva:     'Responsable Inscripto',
 };
 
-const TIPO_CBT = { 6: 'B', 1: 'A', 11: 'C' };
-const TIPO_DOC = { 80: 'CUIT', 96: 'DNI', 99: 'Consumidor Final' };
+const TIPO_CBT  = { 1: 'A', 3: 'A', 6: 'B', 8: 'B', 11: 'C', 13: 'C' };
+const NC_TIPOS  = new Set([3, 8, 13]);
+const TIPO_DOC  = { 80: 'CUIT', 96: 'DNI', 99: 'Consumidor Final' };
 
 function padNro(n, len) {
   return String(n ?? 0).padStart(len, '0');
@@ -59,7 +60,10 @@ export async function generarFacturaPDF(factura) {
   doc.text(`IVA: ${EMISOR.condIva}`, m, 42);
 
   // ── Letra del comprobante (centro) ────────────────────────────────────────
-  const letra = TIPO_CBT[factura.arcaPayload?.CbteTipo] ?? 'B';
+  const cbteTipo  = factura.arcaPayload?.CbteTipo;
+  const letra     = TIPO_CBT[cbteTipo] ?? 'B';
+  const esNC      = NC_TIPOS.has(cbteTipo);
+  const tipoLabel = esNC ? 'NOTA DE CRÉDITO' : 'FACTURA';
   doc.setDrawColor(0);
   doc.setLineWidth(0.5);
   doc.rect(W / 2 - 10, 14, 20, 20);
@@ -68,7 +72,9 @@ export async function generarFacturaPDF(factura) {
   doc.text(letra, W / 2, 28, { align: 'center' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Cod. ${padNro(factura.arcaPayload?.CbteTipo, 2)}`, W / 2, 36, { align: 'center' });
+  doc.text(`Cod. ${padNro(cbteTipo, 2)}`, W / 2, 36, { align: 'center' });
+  doc.setFontSize(5.5);
+  doc.text(tipoLabel, W / 2, 40, { align: 'center' });
 
   // ── Cabecera derecha ──────────────────────────────────────────────────────
   const rx = W / 2 + 14;
@@ -174,12 +180,15 @@ export async function generarFacturaPDF(factura) {
 
   // ── Descarga ──────────────────────────────────────────────────────────────
   const nro = `${padNro(factura.arcaPayload?.PtoVta, 4)}-${padNro(factura.nroComprobante, 8)}`;
-  doc.save(`Factura-${letra}${nro}.pdf`);
+  doc.save(`${esNC ? 'NC' : 'Factura'}-${letra}${nro}.pdf`);
 }
 
 export async function imprimirRecibo80mm(factura) {
-  const letra = TIPO_CBT[factura.arcaPayload?.CbteTipo] ?? 'B';
-  const nro   = `${padNro(factura.arcaPayload?.PtoVta, 4)}-${padNro(factura.nroComprobante, 8)}`;
+  const cbteTipo80  = factura.arcaPayload?.CbteTipo;
+  const letra       = TIPO_CBT[cbteTipo80] ?? 'B';
+  const esNC80      = NC_TIPOS.has(cbteTipo80);
+  const tipoLabel80 = esNC80 ? 'NOTA DE CRÉDITO' : 'FACTURA';
+  const nro         = `${padNro(factura.arcaPayload?.PtoVta, 4)}-${padNro(factura.nroComprobante, 8)}`;
 
   let qrImg = '';
   try {
@@ -223,7 +232,7 @@ export async function imprimirRecibo80mm(factura) {
 <div class="center" style="font-size:9px">CUIT: ${EMISOR.cuit}</div>
 <div class="center" style="font-size:9px">IVA: ${EMISOR.condIva}</div>
 <hr class="sep">
-<div class="center bold" style="font-size:15px">FACTURA ${letra}</div>
+<div class="center bold" style="font-size:${esNC80 ? '12' : '15'}px">${tipoLabel80} ${letra}</div>
 <div class="center" style="font-size:9px">Nro: ${nro}</div>
 <div class="center" style="font-size:9px">Fecha: ${factura.fecha}</div>
 <hr class="sep">
@@ -242,7 +251,7 @@ ${qrImg ? `<div class="qr"><img src="${qrImg}" alt="QR AFIP"></div>` : ''}
 </body>
 </html>`;
 
-  const winWidth = 320, winHeight = 600;
+  const winWidth = 480, winHeight = 800;
   const left = Math.max(0, Math.round((window.screen.width - winWidth) / 2));
   const top  = Math.max(0, Math.round((window.screen.height - winHeight) / 2));
   const win = window.open('', '_blank', `width=${winWidth},height=${winHeight},left=${left},top=${top}`);
