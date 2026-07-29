@@ -223,12 +223,13 @@ export async function setClase(canchaId, fecha, horario, data) {
 
 /**
  * Agrega un alumno al array `alumnos` de una clase (crea el doc si no existe).
+ * @param {Object} extra — { mes, disciplina, tipo } para completar el doc si es nuevo.
  */
-export async function agregarAlumnoAClase(canchaId, fecha, horario, alumnoId) {
+export async function agregarAlumnoAClase(canchaId, fecha, horario, alumnoId, extra = {}) {
   const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
   await setDoc(
     ref,
-    { canchaId, fecha, horario, alumnos: arrayUnion(alumnoId), creadoEn: serverTimestamp() },
+    { canchaId, fecha, horario, ...extra, alumnos: arrayUnion(alumnoId), creadoEn: serverTimestamp() },
     { merge: true },
   );
 }

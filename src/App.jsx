@@ -946,13 +946,17 @@ function App() {
     }
   };
 
-  const handleAgregarAlumnoSlot = async (canchaId, fecha, horario, alumnoId, slotTipo) => {
+  const handleAgregarAlumnoSlot = async (canchaId, fecha, horario, alumnoId, slotTipo, slotDisciplina) => {
     setSyncing(true);
     try {
-      await agregarAlumnoAClase(canchaId, fecha, horario, alumnoId);
-
       // Auto-create pending suelta debt for non-membresía students in Clásica slots
       const normSlotTipo = (slotTipo === 'membresia' || slotTipo === 'suelta' || !slotTipo) ? 'clasica' : slotTipo;
+
+      await agregarAlumnoAClase(canchaId, fecha, horario, alumnoId, {
+        mes: mesActual,
+        tipo: normSlotTipo,
+        disciplina: slotDisciplina || disciplinaActiva,
+      });
 
       if (normSlotTipo === 'dayuse') {
         const alumno = alumnos.find(a => a.id === alumnoId);

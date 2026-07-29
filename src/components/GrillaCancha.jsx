@@ -468,7 +468,7 @@ const EditModal = ({
                   ) : disponibles.slice(0, 8).map((a, i) => (
                     <button
                       key={a.id}
-                      onClick={() => { onAgregar(canchaId, fecha, horario, a.id, tipo); setSearch(''); }}
+                      onClick={() => { onAgregar(canchaId, fecha, horario, a.id, tipo, disciplina); setSearch(''); }}
                       disabled={syncing}
                       className={`w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors disabled:opacity-50 flex items-center justify-between gap-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}
                     >
