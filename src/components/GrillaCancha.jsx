@@ -168,7 +168,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
     if (ids.length === 0) {
       return (
         <button onClick={onClick}
-          className="w-full h-[34px] rounded-md border border-dashed border-slate-150 hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center group">
+          className="w-full h-[42px] rounded-md border border-dashed border-slate-150 hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center group">
           <Icon name="add" size={11} className="text-slate-200 group-hover:text-primary/40 transition-colors" />
         </button>
       );
@@ -176,7 +176,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
     const discLabel = tipo === 'clasica' ? (slot?.disciplina || 'Clase') : badge.label;
     return (
       <button onClick={onClick}
-        className={`w-full h-[34px] border-l-[3px] ${badge.border} border border-slate-100 rounded-md bg-white hover:shadow-sm transition-all text-left px-1.5 flex items-center gap-1.5 overflow-hidden`}>
+        className={`w-full h-[42px] border-l-[3px] ${badge.border} border border-slate-100 rounded-md bg-white hover:shadow-sm transition-all text-left px-1.5 flex items-center gap-1.5 overflow-hidden`}>
         <span className={`text-[9px] font-black uppercase truncate flex-1 leading-none ${badge.bg.split(' ')[1]}`}>
           {discLabel}
         </span>
@@ -203,14 +203,14 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
     if (ids.length === 0) {
       return (
         <button onClick={onClick}
-          className="w-full h-[54px] border border-dashed border-slate-200 rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all flex items-center justify-center group">
+          className="w-full h-[64px] border border-dashed border-slate-200 rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all flex items-center justify-center group">
           <Icon name="add" size={14} className="text-slate-300 group-hover:text-primary/50 transition-colors" />
         </button>
       );
     }
     return (
       <button onClick={onClick}
-        className={`w-full h-[54px] border-l-[3px] ${badge.border} border border-slate-200 rounded-xl bg-white hover:shadow-sm transition-all text-left px-2 py-1.5 flex flex-col justify-between overflow-hidden`}>
+        className={`w-full h-[64px] border-l-[3px] ${badge.border} border border-slate-200 rounded-xl bg-white hover:shadow-sm transition-all text-left px-2 py-1.5 flex flex-col justify-between overflow-hidden`}>
         <div className="flex items-center gap-1 min-w-0">
           {ids.slice(0, 3).map((id, i) => {
             const estado = asistencias?.[id]?.[clave];
@@ -713,26 +713,21 @@ const GrillaCancha = ({
     ? (slotsSemana[modalFecha] || slotsDia)[`${modalSlot.canchaId}|${modalSlot.horario}`] || null
     : null;
 
-  const diaSemana = (() => {
-    const [dd, mm] = fechaSeleccionada.split('/').map(Number);
-    return DIAS_NOMBRE[new Date(anio, mm - 1, dd).getDay()];
-  })();
-
   const TURNOS = [
-    { key: 'manana', label: 'Turno Mañana',      sub: '07 – 16 h' },
-    { key: 'tarde',  label: 'Turno Tarde/Noche', sub: '17 – 22 h' },
-    { key: 'todos',  label: 'Todo el día',        sub: '07 – 22 h' },
+    { key: 'manana', corto: 'Mañana', label: 'Turno Mañana (07 – 16 h)' },
+    { key: 'tarde',  corto: 'Tarde',  label: 'Turno Tarde/Noche (17 – 22 h)' },
+    { key: 'todos',  corto: 'Todo',   label: 'Todo el día (07 – 22 h)' },
   ];
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-on-surface tracking-tight">Canchas</h1>
-          <p className="text-on-surface-variant text-sm">{mesActual}</p>
+    <div className="space-y-2">
+      {/* Header + turno + vista, todo compacto en una fila */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-black text-on-surface tracking-tight">Canchas</h1>
+          <p className="text-on-surface-variant text-xs">{mesActual}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {!esDiaHoy && (
             <button
               onClick={() => {
@@ -745,6 +740,22 @@ const GrillaCancha = ({
               Hoy
             </button>
           )}
+          <div className="flex items-center gap-0.5 p-1 bg-surface-container-lowest rounded-xl shadow-sm">
+            {TURNOS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTurno(t.key)}
+                title={t.label}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  turno === t.key
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {t.corto}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 p-1 bg-surface-container-lowest rounded-xl shadow-sm">
             {[
               { key: 'dia',    label: 'Día',    icon: 'calendar_today'     },
@@ -767,36 +778,14 @@ const GrillaCancha = ({
         </div>
       </div>
 
-      {/* Selector de turno */}
-      <div className="grid grid-cols-3 gap-2">
-        {TURNOS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTurno(t.key)}
-            className={`flex flex-col items-center py-2.5 px-3 rounded-2xl transition-all border-2 ${
-              turno === t.key
-                ? 'border-primary bg-primary/10 text-primary shadow-sm'
-                : 'border-transparent bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'
-            }`}
-          >
-            <span className={`text-[11px] font-black ${turno === t.key ? 'text-primary' : 'text-on-surface'}`}>
-              {t.label}
-            </span>
-            <span className={`text-[10px] ${turno === t.key ? 'text-primary/70' : 'text-outline'}`}>
-              {t.sub}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Navegador de semana */}
-      <div className="bg-surface-container-lowest rounded-2xl p-3">
+      {/* Navegador de semana — compacto, ancho completo */}
+      <div className="bg-surface-container-lowest rounded-2xl px-3 py-1.5">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setFechaSeleccionada(f => offsetSemana(f, -1, mesNum, anio))}
-            className="p-2 rounded-xl hover:bg-surface-container transition-colors shrink-0"
+            className="p-1.5 rounded-xl hover:bg-surface-container transition-colors shrink-0"
           >
-            <Icon name="chevron_left" size={20} />
+            <Icon name="chevron_left" size={18} />
           </button>
 
           <div className="flex-1 grid grid-cols-7 gap-1">
@@ -821,7 +810,7 @@ const GrillaCancha = ({
                   key={fecha}
                   onClick={() => enMes && setFechaSeleccionada(fecha)}
                   disabled={!enMes}
-                  className={`flex flex-col items-center py-1.5 px-1 rounded-xl transition-all text-center ${
+                  className={`flex flex-row items-baseline justify-center gap-1 py-1 px-1 rounded-lg transition-all text-center ${
                     seleccionado
                       ? 'bg-primary text-white shadow-sm'
                       : enMes
@@ -832,11 +821,11 @@ const GrillaCancha = ({
                   <span className={`text-[9px] font-bold uppercase ${seleccionado ? 'text-white/80' : 'text-outline'}`}>
                     {DIAS_NOMBRE[dow]}
                   </span>
-                  <span className={`text-sm font-black ${esHoy && !seleccionado ? 'text-primary' : ''}`}>
+                  <span className={`text-xs font-black ${esHoy && !seleccionado ? 'text-primary' : ''}`}>
                     {dd}
                   </span>
                   {tieneDatos && !seleccionado && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-0.5" />
+                    <span className="w-1 h-1 rounded-full bg-primary/40" />
                   )}
                 </button>
               );
@@ -845,15 +834,11 @@ const GrillaCancha = ({
 
           <button
             onClick={() => setFechaSeleccionada(f => offsetSemana(f, 1, mesNum, anio))}
-            className="p-2 rounded-xl hover:bg-surface-container transition-colors shrink-0"
+            className="p-1.5 rounded-xl hover:bg-surface-container transition-colors shrink-0"
           >
-            <Icon name="chevron_right" size={20} />
+            <Icon name="chevron_right" size={18} />
           </button>
         </div>
-
-        <p className="text-center text-xs font-bold text-on-surface-variant mt-2">
-          {diaSemana} {fechaSeleccionada}
-        </p>
       </div>
 
       {/* ── Vista Día (panorama compacto) ───────────────────────────────── */}
@@ -963,7 +948,7 @@ const GrillaCancha = ({
                               compact
                             />
                           ) : (
-                            <div className="h-[54px] rounded-xl bg-slate-50 border border-dashed border-slate-100" />
+                            <div className="h-[64px] rounded-xl bg-slate-50 border border-dashed border-slate-100" />
                           )}
                         </div>
                       ))}
