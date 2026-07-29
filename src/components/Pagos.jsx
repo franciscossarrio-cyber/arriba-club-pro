@@ -87,27 +87,37 @@ const Pagos = ({
     if (res?.success) { setNombre(''); setFormAbierto(false); }
   };
 
+  // ── Vista: Deudas | Historial ─────────────────────────────────────────────────
+  const [vista, setVista] = useState('deudas');
+  const [filtroDeuda, setFiltroDeuda] = useState('todos');
+  const [filtroHistorial, setFiltroHistorial] = useState('todos');
+
   // ── Pago inline ───────────────────────────────────────────────────────────────
   const [pagoActivoId, setPagoActivoId] = useState(null);
   const [metodoPago, setMetodoPago] = useState('Efectivo');
   const abrirPago  = (id) => { setPagoActivoId(id); setMetodoPago('Efectivo'); };
   const cerrarPago = () => setPagoActivoId(null);
 
-  const confirmarPagoMembresia = async (alumno) => {
-    await onPagarMembresia(alumno, metodoPago);
-    cerrarPago();
+  const pagarPago = async (pago, metodo) => {
+    if (pago.virtual) await onPagarSueltaVirtual(pago, metodo);
+    else              await onMarcarPagado(pago.id, metodo);
   };
-  const confirmarMarcarPagado = async (pago) => {
-    if (pago.virtual) await onPagarSueltaVirtual(pago, metodoPago);
-    else              await onMarcarPagado(pago.id, metodoPago);
+
+  const confirmarPago = async (item) => {
+    if (item.kind === 'membresia')     await onPagarMembresia(item.alumno, metodoPago);
+    else if (item.kind === 'pago-group') for (const p of item.pagos) await pagarPago(p, metodoPago);
+    else                                  await pagarPago(item.pago, metodoPago);
     cerrarPago();
   };
 
-  // ── Búsqueda ──────────────────────────────────────────────────────────────────
+  const cancelarItem = (item) => {
+    if (item.kind === 'pago-group') item.pagos.filter(p => !p.virtual).forEach(p => onCancelarSuelta(p.id));
+    else onCancelarSuelta(item.pago.id);
+  };
+
+  // ── Búsqueda + selección ──────────────────────────────────────────────────────
   const [busqueda, setBusqueda] = useState('');
   const [seleccionados, setSeleccionados] = useState(new Set());
-
-  const totalPendientes = pagosPendientes.length + pagosSueltasPendientes.length;
 
   const { memFiltradas, sueltasFiltradas } = useMemo(() => {
     const q = busqueda.toLowerCase();
@@ -122,28 +132,116 @@ const Pagos = ({
     };
   }, [busqueda, pagosPendientes, pagosSueltasPendientes, alumnos]);
 
+  // Lista unificada de deudas (membresías + sueltas/privadas/prueba/dayuse)
+  const itemsPendientes = useMemo(() => {
+    const mem = memFiltradas.map(a => ({
+      id: a.id, kind: 'membresia', tipo: 'membresia', alumno: a,
+      nombre: a.nombre,
+      sub: `${a.plan} • ${a.frecuencia}`,
+      subColor: 'text-on-surface-variant',
+      monto: preciosDisciplina[a.plan]?.[a.frecuencia] || 0,
+      colLabel: 'Membresía', colValue: mesActual,
+      whatsappHref: a.telefono ? getWhatsAppLink(a, mesActual, preciosDisciplina) : null,
+      cancelable: false,
+    }));
+    const tipoSuelta = TIPOS_PAGO.find(t => t.id === 'suelta');
+    const sueltasPuras = sueltasFiltradas.filter(p => p.tipo === 'suelta' && !p.esExtra);
+    const otras = sueltasFiltradas.filter(p => !(p.tipo === 'suelta' && !p.esExtra));
+
+    const gruposSuelta = {};
+    sueltasPuras.forEach(p => {
+      const key = p.alumnoId || p.nombre;
+      (gruposSuelta[key] ||= []).push(p);
+    });
+
+    const sueltaItems = Object.values(gruposSuelta).map(pagos => {
+      const p0 = pagos[0];
+      const al = alumnos.find(a => a.id === p0.alumnoId);
+      const nombre = al?.nombre || p0.nombre || 'Alumno';
+      const monto = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
+      if (pagos.length === 1) {
+        return {
+          id: p0.id, kind: 'pago', tipo: 'suelta', pago: p0,
+          nombre,
+          sub: `${tipoSuelta.label}${p0.virtual ? ' · sin registrar' : ''}`,
+          subColor: tipoSuelta.color,
+          monto,
+          colLabel: 'Fecha', colValue: p0.fecha,
+          whatsappHref: null,
+          cancelable: !p0.virtual,
+        };
+      }
+      return {
+        id: `suelta-group-${p0.alumnoId || nombre}`, kind: 'pago-group', tipo: 'suelta', pagos,
+        nombre,
+        sub: `${pagos.length} clases sueltas`,
+        subColor: tipoSuelta.color,
+        monto,
+        colLabel: 'Fechas', colValue: `${pagos.length} fechas`,
+        whatsappHref: null,
+        cancelable: pagos.some(p => !p.virtual),
+      };
+    });
+
+    const otrosItems = otras.map(p => {
+      const al = alumnos.find(a => a.id === p.alumnoId);
+      const tipoInfo = TIPOS_PAGO.find(t => t.id === p.tipo) || TIPOS_PAGO[0];
+      return {
+        id: p.id, kind: 'pago', tipo: p.tipo, pago: p,
+        nombre: al?.nombre || p.nombre || 'Alumno',
+        sub: p.esExtra ? 'Clase extra (fuera de plan)' : `${tipoInfo.label}${p.virtual && !p.esExtra ? ' · sin registrar' : ''}`,
+        subColor: tipoInfo.color,
+        monto: p.monto,
+        colLabel: 'Fecha', colValue: p.fecha,
+        whatsappHref: null,
+        cancelable: !p.virtual,
+      };
+    });
+
+    return [...mem, ...sueltaItems, ...otrosItems];
+  }, [memFiltradas, sueltasFiltradas, alumnos, preciosDisciplina, mesActual]);
+
+  const chipsDeuda = useMemo(() => ([
+    { id: 'todos', label: 'Todos', dot: null, count: itemsPendientes.length },
+    ...TIPOS_PAGO.map(t => ({ ...t, count: itemsPendientes.filter(i => i.tipo === t.id).length })).filter(t => t.count > 0),
+  ]), [itemsPendientes]);
+
+  const itemsPendientesFiltrados = filtroDeuda === 'todos'
+    ? itemsPendientes
+    : itemsPendientes.filter(i => i.tipo === filtroDeuda);
+
   const toggleSeleccion = (id) => setSeleccionados(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
   const seleccionarTodos = () => {
-    const ids = [
-      ...memFiltradas.map(a => a.id),
-      ...sueltasFiltradas.map(p => p.id),
-    ];
-    setSeleccionados(prev => prev.size === ids.length ? new Set() : new Set(ids));
+    const ids = itemsPendientesFiltrados.map(i => i.id);
+    setSeleccionados(prev => ids.every(id => prev.has(id)) && prev.size === ids.length ? new Set() : new Set(ids));
+  };
+
+  // ── Cobro masivo ──────────────────────────────────────────────────────────────
+  const [metodoBulk, setMetodoBulk] = useState('Efectivo');
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  const cobrarSeleccionados = async () => {
+    setBulkLoading(true);
+    try {
+      const seleccionActual = itemsPendientes.filter(i => seleccionados.has(i.id));
+      for (const item of seleccionActual) {
+        if (item.kind === 'membresia')       await onPagarMembresia(item.alumno, metodoBulk);
+        else if (item.kind === 'pago-group') for (const p of item.pagos) await pagarPago(p, metodoBulk);
+        else                                   await pagarPago(item.pago, metodoBulk);
+      }
+    } finally {
+      setSeleccionados(new Set());
+      setBulkLoading(false);
+    }
   };
 
   const exportarCSV = () => {
-    const rows = [['Nombre', 'Tipo', 'Plan', 'Frecuencia', 'Monto', 'Estado']];
-    memFiltradas.forEach(a =>
-      rows.push([a.nombre, 'Membresía', a.plan, a.frecuencia, preciosDisciplina[a.plan]?.[a.frecuencia] || 0, 'Pendiente'])
-    );
-    sueltasFiltradas.forEach(p => {
-      const al = alumnos.find(a => a.id === p.alumnoId);
-      rows.push([al?.nombre || p.nombre, p.tipo, '-', '-', p.monto, 'Pendiente']);
-    });
+    const rows = [['Nombre', 'Tipo', 'Monto', 'Estado']];
+    itemsPendientesFiltrados.forEach(i => rows.push([i.nombre, i.colLabel, i.monto, 'Pendiente']));
     const csv = rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -152,13 +250,27 @@ const Pagos = ({
     URL.revokeObjectURL(url);
   };
 
-  // ── Listas pagados ────────────────────────────────────────────────────────────
-  const pagosPagados  = pagosDisciplina.filter(p => p.estado === 'Pagado');
-  const pagosSueltos  = pagosPagados.filter(p => p.tipo === 'suelta');
-  const pagosPrivados = pagosPagados.filter(p => p.tipo === 'privada');
-  const pagosPrueba   = pagosPagados.filter(p => p.tipo === 'prueba');
-  const pagosDayUse   = pagosPagados.filter(p => p.tipo === 'dayuse');
-  const pagosMembresia = pagosPagados.filter(p => !['suelta', 'privada', 'prueba', 'dayuse'].includes(p.tipo));
+  // ── Historial (pagados) ───────────────────────────────────────────────────────
+  const pagosPagados = pagosDisciplina.filter(p => p.estado === 'Pagado');
+
+  const historialItems = useMemo(() => pagosPagados.map((p, i) => {
+    const al = alumnos.find(a => a.id === p.alumnoId);
+    const tipoNorm = ['suelta', 'privada', 'prueba', 'dayuse'].includes(p.tipo) ? p.tipo : 'membresia';
+    const tipoInfo = TIPOS_PAGO.find(t => t.id === tipoNorm) || TIPOS_PAGO[TIPOS_PAGO.length - 1];
+    return {
+      id: p.id || i, nombre: al?.nombre || p.nombre || 'Alumno', tipo: tipoNorm, tipoInfo,
+      monto: p.monto, metodo: p.metodo || 'Efectivo', fecha: p.fecha,
+    };
+  }), [pagosPagados, alumnos]);
+
+  const chipsHistorial = useMemo(() => ([
+    { id: 'todos', label: 'Todos', dot: null, count: historialItems.length },
+    ...TIPOS_PAGO.map(t => ({ ...t, count: historialItems.filter(i => i.tipo === t.id).length })).filter(t => t.count > 0),
+  ]), [historialItems]);
+
+  const historialFiltrado = filtroHistorial === 'todos'
+    ? historialItems
+    : historialItems.filter(i => i.tipo === filtroHistorial);
 
   const totalEsperado = montoCobrado + montoPendiente;
   const pct = totalEsperado > 0 ? Math.round((montoCobrado / totalEsperado) * 100) : 0;
@@ -169,7 +281,7 @@ const Pagos = ({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-on-surface tracking-tight">Pagos</h1>
-          <p className="text-on-surface-variant text-sm mt-0.5">Gestión financiera del mes en curso</p>
+          <p className="text-on-surface-variant text-sm mt-0.5">Gestión de deudas del mes en curso</p>
         </div>
         <button
           onClick={() => { setFormAbierto(v => !v); setResultado(null); }}
@@ -242,7 +354,6 @@ const Pagos = ({
 
       {/* ── Stats ──────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Cobrado */}
         <div className="bg-surface-container-lowest rounded-2xl p-5 shadow-sm flex flex-col justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Cobrado</p>
           <p className="text-2xl font-black text-success leading-tight">{formatMonto(montoCobrado)}</p>
@@ -255,19 +366,17 @@ const Pagos = ({
           </div>
         </div>
 
-        {/* Pendiente */}
         <div className="bg-surface-container-lowest rounded-2xl p-5 shadow-sm flex flex-col justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pendiente</p>
           <p className="text-2xl font-black text-amber-600 leading-tight">{formatMonto(montoPendiente)}</p>
-          {totalPendientes > 0 && (
+          {itemsPendientes.length > 0 && (
             <div className="flex items-center gap-1.5 text-amber-600">
               <Icon name="warning" size={15} />
-              <p className="text-xs font-semibold">{totalPendientes} Pagos por recolectar</p>
+              <p className="text-xs font-semibold">{itemsPendientes.length} Pagos por recolectar</p>
             </div>
           )}
         </div>
 
-        {/* Disciplina Activa */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 p-5 text-white shadow-sm flex flex-col justify-between">
           <p className="text-xs font-bold uppercase tracking-widest opacity-75">Disciplina Activa</p>
           <p className="text-2xl font-black leading-tight mt-1">{disciplinaActiva}</p>
@@ -275,325 +384,235 @@ const Pagos = ({
             <Icon name="sports_volleyball" size={14} />
             <p className="text-xs font-medium">{mesActual}</p>
           </div>
-          {/* decorative circles */}
           <div className="absolute -right-6 -bottom-6 w-28 h-28 rounded-full bg-white/10 pointer-events-none" />
           <div className="absolute right-4 -bottom-10 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
         </div>
       </div>
 
-      {/* ── Buscador ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1 flex items-center gap-3 bg-surface-container-lowest rounded-2xl px-4 py-3 shadow-sm">
-          <Icon name="search" size={18} className="text-outline flex-shrink-0" />
-          <input
-            type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre de alumno o plan..."
-            className="bg-transparent flex-1 text-sm text-on-surface placeholder:text-outline outline-none"
-          />
-          {busqueda && (
-            <button onClick={() => setBusqueda('')} className="text-outline hover:text-on-surface">
-              <Icon name="close" size={16} />
-            </button>
-          )}
-        </div>
-        <button className="flex items-center gap-2 px-4 py-3 bg-surface-container-lowest rounded-2xl text-sm font-medium text-on-surface-variant shadow-sm hover:bg-surface-container transition-colors">
-          <Icon name="tune" size={16} />
-          Filtros
-        </button>
+      {/* ── Tabs Deudas / Historial ────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 p-1 bg-surface-container-lowest rounded-2xl w-fit shadow-sm">
+        {[
+          { key: 'deudas',     label: 'Deudas',     count: itemsPendientes.length },
+          { key: 'historial',  label: 'Historial',  count: historialItems.length },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setVista(t.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              vista === t.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            {t.label}
+            <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-bold ${
+              vista === t.key ? 'bg-white/20 text-white' : 'bg-surface-container-high text-on-surface-variant'
+            }`}>{t.count}</span>
+          </button>
+        ))}
       </div>
 
-      {/* ── Pendientes ─────────────────────────────────────────────────────── */}
-      {(memFiltradas.length > 0 || sueltasFiltradas.length > 0) && (
-        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-          {/* Header */}
-          <div className="px-5 py-4 flex items-center justify-between border-b border-surface-container">
-            <div className="flex items-center gap-3">
-              <h3 className="font-bold text-on-surface text-base">Pendientes de pago</h3>
-              <span className="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 rounded-full bg-amber-500 text-white text-xs font-bold">
-                {memFiltradas.length + sueltasFiltradas.length}
-              </span>
+      {/* ══════════════════════════════ DEUDAS ══════════════════════════════ */}
+      {vista === 'deudas' && (
+        <>
+          {/* Buscador */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 flex items-center gap-3 bg-surface-container-lowest rounded-2xl px-4 py-3 shadow-sm">
+              <Icon name="search" size={18} className="text-outline flex-shrink-0" />
+              <input
+                type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre de alumno o plan..."
+                className="bg-transparent flex-1 text-sm text-on-surface placeholder:text-outline outline-none"
+              />
+              {busqueda && (
+                <button onClick={() => setBusqueda('')} className="text-outline hover:text-on-surface">
+                  <Icon name="close" size={16} />
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-3 text-sm text-on-surface-variant">
-              <button onClick={seleccionarTodos} className="hover:text-on-surface transition-colors font-medium">
+            <button onClick={exportarCSV}
+              className="flex items-center gap-2 px-4 py-3 bg-surface-container-lowest rounded-2xl text-sm font-medium text-on-surface-variant shadow-sm hover:bg-surface-container transition-colors">
+              <Icon name="download" size={16} />
+              Exportar
+            </button>
+          </div>
+
+          {/* Chips de filtro */}
+          <div className="flex flex-wrap gap-2">
+            {chipsDeuda.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setFiltroDeuda(c.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all ${
+                  filtroDeuda === c.id
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                {c.dot && <span className={`w-2 h-2 rounded-full ${c.dot}`} />}
+                {c.label} ({c.count})
+              </button>
+            ))}
+          </div>
+
+          {/* Barra de acción masiva */}
+          {seleccionados.size > 0 && (
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 flex-wrap bg-indigo-600 text-white rounded-2xl px-5 py-3 shadow-md">
+              <span className="text-sm font-bold">{seleccionados.size} seleccionado{seleccionados.size !== 1 ? 's' : ''}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {['Efectivo', 'Transferencia'].map(m => (
+                  <button key={m} onClick={() => setMetodoBulk(m)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      metodoBulk === m ? 'bg-white text-indigo-600' : 'bg-white/15 text-white hover:bg-white/25'
+                    }`}>{m}</button>
+                ))}
+                <button onClick={cobrarSeleccionados} disabled={bulkLoading || syncing}
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold bg-success text-white disabled:opacity-50 transition-colors">
+                  {bulkLoading ? '...' : 'Cobrar seleccionados'}
+                </button>
+                <button onClick={() => setSeleccionados(new Set())}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de deudas */}
+          <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
+            <div className="px-5 py-4 flex items-center justify-between border-b border-surface-container">
+              <h3 className="font-bold text-on-surface text-base">Pendientes de pago</h3>
+              <button onClick={seleccionarTodos} className="text-sm hover:text-on-surface transition-colors font-medium text-on-surface-variant">
                 Seleccionar todos
               </button>
-              <span className="text-outline">|</span>
-              <button onClick={exportarCSV} className="hover:text-on-surface transition-colors font-medium">
-                Exportar CSV
-              </button>
             </div>
-          </div>
 
-          <div className="divide-y divide-surface-container">
-            {/* Membresías pendientes */}
-            {memFiltradas.map(alumno => {
-              const montoPago = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
-              return (
-                <div key={alumno.id} className="px-5 py-4">
-                  <div className="flex items-center gap-4">
-                    <input type="checkbox" className="rounded accent-indigo-600 flex-shrink-0"
-                      checked={seleccionados.has(alumno.id)}
-                      onChange={() => toggleSeleccion(alumno.id)} />
-                    <Avatar nombre={alumno.nombre} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-on-surface text-sm truncate">{alumno.nombre}</p>
-                      <p className="text-xs text-on-surface-variant mt-0.5">
-                        {alumno.plan} • {alumno.frecuencia}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0 hidden sm:block">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Membresía</p>
-                      <p className="text-xs text-on-surface-variant mt-0.5">{mesActual}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Importe</p>
-                      <p className="text-base font-black text-amber-600 mt-0.5">{formatMonto(montoPago)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {alumno.telefono && (
-                        <a href={getWhatsAppLink(alumno, mesActual, preciosDisciplina)}
-                          target="_blank" rel="noopener noreferrer"
-                          className="w-8 h-8 rounded-xl bg-green-500 hover:bg-green-600 flex items-center justify-center text-white transition-colors">
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-                          </svg>
-                        </a>
-                      )}
-                      <button onClick={() => abrirPago(alumno.id)}
-                        className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-bold transition-colors">
-                        Pagar
-                      </button>
-                    </div>
-                  </div>
-                  {pagoActivoId === alumno.id && (
-                    <div className="mt-3 ml-14 p-4 bg-surface-container rounded-2xl space-y-3">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Forma de pago</p>
-                      <div className="flex gap-2">
-                        {['Efectivo', 'Transferencia'].map(m => (
-                          <button key={m} onClick={() => setMetodoPago(m)}
-                            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                              metodoPago === m ? 'bg-indigo-600 text-white' : 'bg-surface-container-high text-on-surface-variant'
-                            }`}>{m}</button>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={cerrarPago}
-                          className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-container-high text-on-surface-variant hover:bg-surface-container transition-colors">
-                          Cancelar
-                        </button>
-                        <button onClick={() => confirmarPagoMembresia(alumno)} disabled={syncing}
-                          className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
-                          {syncing ? '...' : 'Confirmar'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Clases sueltas / Day Use pendientes */}
-            {sueltasFiltradas.map(pago => {
-              const alumno = alumnos.find(a => a.id === pago.alumnoId);
-              const tipoInfo = TIPOS_PAGO.find(t => t.id === pago.tipo) || TIPOS_PAGO[0];
-              const nombreAlumno = alumno?.nombre || pago.nombre || 'Alumno';
-              return (
-                <div key={pago.id} className="px-5 py-4">
-                  <div className="flex items-center gap-4">
-                    <input type="checkbox" className="rounded accent-indigo-600 flex-shrink-0"
-                      checked={seleccionados.has(pago.id)}
-                      onChange={() => toggleSeleccion(pago.id)} />
-                    <Avatar nombre={nombreAlumno} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-on-surface text-sm truncate">{nombreAlumno}</p>
-                      <p className={`text-xs font-semibold mt-0.5 ${tipoInfo.color}`}>
-                        {pago.esExtra ? 'Clase extra (fuera de plan)' : tipoInfo.label}
-                        {pago.virtual && !pago.esExtra ? ' · sin registrar' : ''}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0 hidden sm:block">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Fecha</p>
-                      <p className="text-xs text-on-surface-variant mt-0.5">{pago.fecha}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Importe</p>
-                      <p className="text-base font-black text-amber-600 mt-0.5">{formatMonto(pago.monto)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {!pago.virtual && (
-                        <button onClick={() => onCancelarSuelta(pago.id)} disabled={syncing}
-                          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-error/10 text-outline hover:text-error transition-colors"
-                          title="Cancelar deuda">
-                          <Icon name="close" size={16} />
-                        </button>
-                      )}
-                      <button onClick={() => abrirPago(pago.id)}
-                        className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-bold transition-colors">
-                        Pagar
-                      </button>
-                    </div>
-                  </div>
-                  {pagoActivoId === pago.id && (
-                    <div className="mt-3 ml-14 p-4 bg-surface-container rounded-2xl space-y-3">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Forma de pago</p>
-                      <div className="flex gap-2">
-                        {['Efectivo', 'Transferencia'].map(m => (
-                          <button key={m} onClick={() => setMetodoPago(m)}
-                            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                              metodoPago === m ? 'bg-indigo-600 text-white' : 'bg-surface-container-high text-on-surface-variant'
-                            }`}>{m}</button>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={cerrarPago}
-                          className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-container-high text-on-surface-variant hover:bg-surface-container transition-colors">
-                          Cancelar
-                        </button>
-                        <button onClick={() => confirmarMarcarPagado(pago)} disabled={syncing}
-                          className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
-                          {syncing ? '...' : 'Confirmar'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Membresías pagadas ─────────────────────────────────────────────── */}
-      <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
-          <Icon name="check_circle" className="text-success" size={20} />
-          <h3 className="font-bold text-on-surface">Membresías</h3>
-          <span className="text-sm text-on-surface-variant">({pagosMembresia.length})</span>
-        </div>
-        <div className="divide-y divide-surface-container">
-          {pagosMembresia.map((pago, i) => {
-            const alumno = alumnos.find(a => a.id === pago.alumnoId);
-            return (
-              <div key={i} className="flex items-center gap-4 px-5 py-4">
-                <Avatar nombre={alumno?.nombre || pago.nombre} />
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-on-surface text-sm truncate">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                  <p className="text-xs text-on-surface-variant mt-0.5">{pago.metodo || 'Efectivo'}</p>
-                </div>
-                <p className="font-bold text-success text-sm flex-shrink-0">{formatMonto(pago.monto)}</p>
+            {itemsPendientesFiltrados.length === 0 ? (
+              <div className="px-5 py-14 text-center text-on-surface-variant text-sm">
+                <Icon name="check_circle" size={32} className="mx-auto mb-2 text-success" />
+                No hay deudas pendientes en este filtro
               </div>
-            );
-          })}
-          {pagosMembresia.length === 0 && (
-            <div className="px-5 py-10 text-center text-on-surface-variant text-sm">
-              No hay membresías registradas este mes
+            ) : (
+              <div className="divide-y divide-surface-container">
+                {itemsPendientesFiltrados.map(item => (
+                  <div key={item.id} className="px-5 py-4">
+                    <div className="flex items-center gap-4">
+                      <input type="checkbox" className="rounded accent-indigo-600 flex-shrink-0"
+                        checked={seleccionados.has(item.id)}
+                        onChange={() => toggleSeleccion(item.id)} />
+                      <Avatar nombre={item.nombre} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-on-surface text-sm truncate">{item.nombre}</p>
+                        <p className={`text-xs font-medium mt-0.5 ${item.subColor}`}>{item.sub}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0 hidden sm:block">
+                        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">{item.colLabel}</p>
+                        <p className="text-xs text-on-surface-variant mt-0.5">{item.colValue}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Importe</p>
+                        <p className="text-base font-black text-amber-600 mt-0.5">{formatMonto(item.monto)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {item.whatsappHref && (
+                          <a href={item.whatsappHref} target="_blank" rel="noopener noreferrer"
+                            className="w-8 h-8 rounded-xl bg-green-500 hover:bg-green-600 flex items-center justify-center text-white transition-colors">
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+                            </svg>
+                          </a>
+                        )}
+                        {item.cancelable && (
+                          <button onClick={() => cancelarItem(item)} disabled={syncing}
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-error/10 text-outline hover:text-error transition-colors"
+                            title="Cancelar deuda">
+                            <Icon name="close" size={16} />
+                          </button>
+                        )}
+                        <button onClick={() => abrirPago(item.id)}
+                          className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-bold transition-colors">
+                          Pagar
+                        </button>
+                      </div>
+                    </div>
+                    {pagoActivoId === item.id && (
+                      <div className="mt-3 ml-14 p-4 bg-surface-container rounded-2xl space-y-3">
+                        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Forma de pago</p>
+                        <div className="flex gap-2">
+                          {['Efectivo', 'Transferencia'].map(m => (
+                            <button key={m} onClick={() => setMetodoPago(m)}
+                              className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                                metodoPago === m ? 'bg-indigo-600 text-white' : 'bg-surface-container-high text-on-surface-variant'
+                              }`}>{m}</button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={cerrarPago}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-container-high text-on-surface-variant hover:bg-surface-container transition-colors">
+                            Cancelar
+                          </button>
+                          <button onClick={() => confirmarPago(item)} disabled={syncing}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
+                            {syncing ? '...' : 'Confirmar'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════════════ HISTORIAL ═══════════════════════════ */}
+      {vista === 'historial' && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {chipsHistorial.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setFiltroHistorial(c.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all ${
+                  filtroHistorial === c.id
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                {c.dot && <span className={`w-2 h-2 rounded-full ${c.dot}`} />}
+                {c.label} ({c.count})
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
+              <Icon name="check_circle" className="text-success" size={20} />
+              <h3 className="font-bold text-on-surface">Pagos registrados</h3>
+              <span className="text-sm text-on-surface-variant">({historialFiltrado.length})</span>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Clases Sueltas pagadas ─────────────────────────────────────────── */}
-      {pagosSueltos.length > 0 && (
-        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-amber-500 flex-shrink-0" />
-            <h3 className="font-bold text-on-surface">Clases Sueltas</h3>
-            <span className="text-sm text-on-surface-variant">({pagosSueltos.length})</span>
-          </div>
-          <div className="divide-y divide-surface-container">
-            {pagosSueltos.map((pago, i) => {
-              const alumno = alumnos.find(a => a.id === pago.alumnoId);
-              return (
-                <div key={i} className="flex items-center gap-4 px-5 py-4">
-                  <Avatar nombre={alumno?.nombre || pago.nombre} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-on-surface text-sm truncate">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                    <p className="text-xs text-on-surface-variant mt-0.5">{pago.fecha} • {pago.metodo || 'Efectivo'}</p>
+            {historialFiltrado.length === 0 ? (
+              <div className="px-5 py-14 text-center text-on-surface-variant text-sm">
+                No hay pagos registrados en este filtro
+              </div>
+            ) : (
+              <div className="divide-y divide-surface-container">
+                {historialFiltrado.map(item => (
+                  <div key={item.id} className="flex items-center gap-4 px-5 py-4">
+                    <Avatar nombre={item.nombre} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-on-surface text-sm truncate">{item.nombre}</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${item.tipoInfo.dot}`} />
+                        {item.tipoInfo.label} · {item.fecha ? `${item.fecha} · ` : ''}{item.metodo}
+                      </p>
+                    </div>
+                    <p className={`font-bold text-sm flex-shrink-0 ${item.tipoInfo.color}`}>{formatMonto(item.monto)}</p>
                   </div>
-                  <p className="font-bold text-amber-600 text-sm flex-shrink-0">{formatMonto(pago.monto)}</p>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* ── Day Use pagados ────────────────────────────────────────────────── */}
-      {pagosDayUse.length > 0 && (
-        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-orange-500 flex-shrink-0" />
-            <h3 className="font-bold text-on-surface">Day Use</h3>
-            <span className="text-sm text-on-surface-variant">({pagosDayUse.length})</span>
-          </div>
-          <div className="divide-y divide-surface-container">
-            {pagosDayUse.map((pago, i) => {
-              const alumno = alumnos.find(a => a.id === pago.alumnoId);
-              return (
-                <div key={i} className="flex items-center gap-4 px-5 py-4">
-                  <Avatar nombre={alumno?.nombre || pago.nombre} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-on-surface text-sm truncate">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                    <p className="text-xs text-on-surface-variant mt-0.5">{pago.fecha} • {pago.metodo || 'Efectivo'}</p>
-                  </div>
-                  <p className="font-bold text-orange-600 text-sm flex-shrink-0">{formatMonto(pago.monto)}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Clases Privadas pagadas ────────────────────────────────────────── */}
-      {pagosPrivados.length > 0 && (
-        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-purple-500 flex-shrink-0" />
-            <h3 className="font-bold text-on-surface">Clases Privadas</h3>
-            <span className="text-sm text-on-surface-variant">({pagosPrivados.length})</span>
-          </div>
-          <div className="divide-y divide-surface-container">
-            {pagosPrivados.map((pago, i) => {
-              const alumno = alumnos.find(a => a.id === pago.alumnoId);
-              return (
-                <div key={i} className="flex items-center gap-4 px-5 py-4">
-                  <Avatar nombre={alumno?.nombre || pago.nombre} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-on-surface text-sm truncate">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                    <p className="text-xs text-on-surface-variant mt-0.5">{pago.fecha} • {pago.metodo || 'Efectivo'}</p>
-                  </div>
-                  <p className="font-bold text-purple-600 text-sm flex-shrink-0">{formatMonto(pago.monto)}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Clases de Prueba pagadas ───────────────────────────────────────── */}
-      {pagosPrueba.length > 0 && (
-        <div className="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-surface-container flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-teal-500 flex-shrink-0" />
-            <h3 className="font-bold text-on-surface">Clases de Prueba</h3>
-            <span className="text-sm text-on-surface-variant">({pagosPrueba.length})</span>
-          </div>
-          <div className="divide-y divide-surface-container">
-            {pagosPrueba.map((pago, i) => {
-              const alumno = alumnos.find(a => a.id === pago.alumnoId);
-              return (
-                <div key={i} className="flex items-center gap-4 px-5 py-4">
-                  <Avatar nombre={alumno?.nombre || pago.nombre} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-on-surface text-sm truncate">{alumno?.nombre || pago.nombre || 'Alumno'}</p>
-                    <p className="text-xs text-on-surface-variant mt-0.5">{pago.fecha} • {pago.metodo || 'Efectivo'}</p>
-                  </div>
-                  <p className="font-bold text-teal-600 text-sm flex-shrink-0">{formatMonto(pago.monto)}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
