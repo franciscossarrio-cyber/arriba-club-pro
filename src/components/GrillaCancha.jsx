@@ -383,89 +383,6 @@ const EditModal = ({
         {/* ── Body scrollable ── */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
 
-          {/* Tipo de clase */}
-          <section>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Tipo de clase</p>
-            <div className="grid grid-cols-3 gap-2">
-              {Object.entries(TIPO_CONFIG).map(([key, cfg]) => (
-                <button
-                  key={key}
-                  onClick={() => { setTipo(key); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
-                  className={`py-3 rounded-2xl text-sm font-bold transition-all flex flex-col items-center gap-1.5 ${
-                    tipo === key
-                      ? `${cfg.activeBg} ${cfg.activeText} shadow-md`
-                      : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
-                  }`}
-                >
-                  <Icon name={cfg.icon} size={18} filled={tipo === key} />
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* Disciplina */}
-          <section>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Disciplina</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DISCIPLINAS.map(d => {
-                const dc = DISC_COLORS[d] || DISC_COLORS['Futvoley'];
-                const activo = disciplina === d;
-                return (
-                  <button
-                    key={d}
-                    onClick={() => {
-                      if (d === disciplina) return;
-                      if (ids.length > 0) setPendingDisciplina(d);
-                      else { setDisciplina(d); onCrearSlot(canchaId, fecha, horario, tipo, d, false); }
-                    }}
-                    className={`py-2.5 px-3 rounded-xl text-sm font-bold transition-all border-2 ${
-                      activo
-                        ? `${dc.bg} ${dc.border} ${dc.text}`
-                        : pendingDisciplina === d
-                          ? 'bg-red-50 border-red-300 text-red-600'
-                          : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
-                    }`}
-                  >
-                    {d}
-                  </button>
-                );
-              })}
-            </div>
-            {pendingDisciplina && (
-              <div className="mt-3 p-4 bg-red-50 border border-red-100 rounded-2xl">
-                <p className="text-sm font-bold text-red-700 mb-0.5">¿Cambiar a {pendingDisciplina}?</p>
-                <p className="text-xs text-red-400 mb-3">Se eliminarán los {ids.length} alumno{ids.length !== 1 ? 's' : ''} asignados.</p>
-                <div className="flex gap-2">
-                  <button onClick={() => setPendingDisciplina(null)} className="flex-1 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">Cancelar</button>
-                  <button
-                    onClick={() => { setDisciplina(pendingDisciplina); onCrearSlot(canchaId, fecha, horario, tipo, pendingDisciplina, true); setPendingDisciplina(null); }}
-                    disabled={syncing}
-                    className="flex-1 py-2 text-xs font-bold rounded-xl bg-red-500 text-white disabled:opacity-50"
-                  >Confirmar</button>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Profesor */}
-          {profesores?.length > 0 && (
-            <section>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Profesor</p>
-              <select
-                value={profeId || ''}
-                onChange={e => onAsignarProfe(canchaId, fecha, horario, disciplina, e.target.value || null)}
-                disabled={syncing}
-                className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-              >
-                <option value="">Sin asignar</option>
-                {profesores.filter(p => p.estado === 'Activo').map(p => (
-                  <option key={p.id} value={p.id}>{p.nombre}</option>
-                ))}
-              </select>
-            </section>
-          )}
-
           {/* Alumnos */}
           <section>
             <div className="flex items-center justify-between mb-2.5">
@@ -569,21 +486,112 @@ const EditModal = ({
               )}
             </section>
           )}
+
+          {/* Tipo de clase */}
+          <section>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Tipo de clase</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(TIPO_CONFIG).map(([key, cfg]) => (
+                <button
+                  key={key}
+                  onClick={() => { setTipo(key); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
+                  className={`py-3 rounded-2xl text-sm font-bold transition-all flex flex-col items-center gap-1.5 ${
+                    tipo === key
+                      ? `${cfg.activeBg} ${cfg.activeText} shadow-md`
+                      : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon name={cfg.icon} size={18} filled={tipo === key} />
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Disciplina */}
+          <section>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Disciplina</p>
+            <div className="grid grid-cols-2 gap-2">
+              {DISCIPLINAS.map(d => {
+                const dc = DISC_COLORS[d] || DISC_COLORS['Futvoley'];
+                const activo = disciplina === d;
+                return (
+                  <button
+                    key={d}
+                    onClick={() => {
+                      if (d === disciplina) return;
+                      if (ids.length > 0) setPendingDisciplina(d);
+                      else { setDisciplina(d); onCrearSlot(canchaId, fecha, horario, tipo, d, false); }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl text-sm font-bold transition-all border-2 ${
+                      activo
+                        ? `${dc.bg} ${dc.border} ${dc.text}`
+                        : pendingDisciplina === d
+                          ? 'bg-red-50 border-red-300 text-red-600'
+                          : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+            {pendingDisciplina && (
+              <div className="mt-3 p-4 bg-red-50 border border-red-100 rounded-2xl">
+                <p className="text-sm font-bold text-red-700 mb-0.5">¿Cambiar a {pendingDisciplina}?</p>
+                <p className="text-xs text-red-400 mb-3">Se eliminarán los {ids.length} alumno{ids.length !== 1 ? 's' : ''} asignados.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setPendingDisciplina(null)} className="flex-1 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">Cancelar</button>
+                  <button
+                    onClick={() => { setDisciplina(pendingDisciplina); onCrearSlot(canchaId, fecha, horario, tipo, pendingDisciplina, true); setPendingDisciplina(null); }}
+                    disabled={syncing}
+                    className="flex-1 py-2 text-xs font-bold rounded-xl bg-red-500 text-white disabled:opacity-50"
+                  >Confirmar</button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Profesor */}
+          {profesores?.length > 0 && (
+            <section>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Profesor</p>
+              <select
+                value={profeId || ''}
+                onChange={e => onAsignarProfe(canchaId, fecha, horario, disciplina, e.target.value || null)}
+                disabled={syncing}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+              >
+                <option value="">Sin asignar</option>
+                {profesores.filter(p => p.estado === 'Activo').map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </section>
+          )}
         </div>
 
         {/* ── Footer ── */}
-        <div className="px-6 py-3 border-t border-slate-100 flex items-center gap-4 flex-wrap bg-slate-50/50">
-          {[
-            { color: 'bg-green-500', label: 'Vino y pagó' },
-            { color: 'bg-red-500',   label: 'No vino'     },
-            { color: 'bg-blue-500',  label: 'Sin pago'    },
-            { color: 'bg-amber-500', label: 'Canceló'     },
-          ].map(l => (
-            <span key={l.label} className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
-              <span className={`w-2 h-2 rounded-full ${l.color}`} />
-              {l.label}
-            </span>
-          ))}
+        <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap bg-slate-50/50">
+          <div className="flex items-center gap-4 flex-wrap">
+            {[
+              { color: 'bg-green-500', label: 'Vino y pagó' },
+              { color: 'bg-red-500',   label: 'No vino'     },
+              { color: 'bg-blue-500',  label: 'Sin pago'    },
+              { color: 'bg-amber-500', label: 'Canceló'     },
+            ].map(l => (
+              <span key={l.label} className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
+                <span className={`w-2 h-2 rounded-full ${l.color}`} />
+                {l.label}
+              </span>
+            ))}
+          </div>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl text-sm font-bold bg-primary text-white shadow-sm hover:opacity-90 transition-opacity"
+          >
+            Guardar
+          </button>
         </div>
       </div>
     </div>
