@@ -320,6 +320,10 @@ const EditModal = ({
   const [tipo, setTipo] = useState(normTipo(slot?.tipo || 'clasica'));
   const [disciplina, setDisciplina] = useState(slot?.disciplina || 'Futvoley');
   const [pendingDisciplina, setPendingDisciplina] = useState(null);
+  // Para turnos nuevos, el tipo (Clásica/Privada/Day Use) hay que confirmarlo
+  // explícitamente antes de poder agregar alumnos — evita que el turno quede
+  // guardado como "Clásica" por default y se facture mal (ej: Day Use como suelta).
+  const [tipoConfirmado, setTipoConfirmado] = useState(!!slot);
   const ids = slot?.alumnos || [];
   const clave = `${fecha}|${horario}`;
   const cancelados = ids.filter(id => asistencias?.[id]?.[clave] === 'cambio_turno').length;
@@ -451,38 +455,58 @@ const EditModal = ({
           {(tipo === 'dayuse' || efectivos < 8) && (
             <section>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Agregar alumno</p>
-              <div className="relative">
-                <Icon name="search" size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Buscar por nombre o apodo..."
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all placeholder:text-slate-300"
-                />
-              </div>
-              {search.trim() && (
-                <div className="mt-2 rounded-2xl border border-slate-100 overflow-hidden">
-                  {disponibles.length === 0 ? (
-                    <p className="text-sm text-slate-400 px-4 py-3 text-center">Sin resultados</p>
-                  ) : disponibles.slice(0, 8).map((a, i) => (
-                    <button
-                      key={a.id}
-                      onClick={() => { onAgregar(canchaId, fecha, horario, a.id, tipo, disciplina); setSearch(''); }}
-                      disabled={syncing}
-                      className={`w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors disabled:opacity-50 flex items-center justify-between gap-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{a.nombre}</p>
-                        {(a.apodo || a.apodos?.[0]) && <p className="text-xs text-slate-400">"{a.apodo || a.apodos[0]}"</p>}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        {a.plan && <p className="text-[11px] text-slate-400">{a.plan}</p>}
-                        {a.horario && <p className="text-[11px] text-slate-400">{a.horario}</p>}
-                      </div>
-                    </button>
-                  ))}
+              {!tipoConfirmado ? (
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl space-y-2.5">
+                  <p className="text-xs font-semibold text-amber-700">Elegí primero el tipo de turno para que se facture correctamente:</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {Object.entries(TIPO_CONFIG).map(([key, cfg]) => (
+                      <button
+                        key={key}
+                        onClick={() => { setTipo(key); setTipoConfirmado(true); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
+                        className="py-2.5 rounded-xl text-xs font-bold bg-white text-slate-600 hover:bg-slate-50 border border-amber-200 flex flex-col items-center gap-1"
+                      >
+                        <Icon name={cfg.icon} size={16} />
+                        {cfg.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Icon name="search" size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="Buscar por nombre o apodo..."
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all placeholder:text-slate-300"
+                    />
+                  </div>
+                  {search.trim() && (
+                    <div className="mt-2 rounded-2xl border border-slate-100 overflow-hidden">
+                      {disponibles.length === 0 ? (
+                        <p className="text-sm text-slate-400 px-4 py-3 text-center">Sin resultados</p>
+                      ) : disponibles.slice(0, 8).map((a, i) => (
+                        <button
+                          key={a.id}
+                          onClick={() => { onAgregar(canchaId, fecha, horario, a.id, tipo, disciplina); setSearch(''); }}
+                          disabled={syncing}
+                          className={`w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors disabled:opacity-50 flex items-center justify-between gap-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{a.nombre}</p>
+                            {(a.apodo || a.apodos?.[0]) && <p className="text-xs text-slate-400">"{a.apodo || a.apodos[0]}"</p>}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            {a.plan && <p className="text-[11px] text-slate-400">{a.plan}</p>}
+                            {a.horario && <p className="text-[11px] text-slate-400">{a.horario}</p>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </section>
           )}
@@ -494,7 +518,7 @@ const EditModal = ({
               {Object.entries(TIPO_CONFIG).map(([key, cfg]) => (
                 <button
                   key={key}
-                  onClick={() => { setTipo(key); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
+                  onClick={() => { setTipo(key); setTipoConfirmado(true); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
                   className={`py-3 rounded-2xl text-sm font-bold transition-all flex flex-col items-center gap-1.5 ${
                     tipo === key
                       ? `${cfg.activeBg} ${cfg.activeText} shadow-md`

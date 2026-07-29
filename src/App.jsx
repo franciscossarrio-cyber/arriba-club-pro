@@ -210,11 +210,22 @@ function App() {
   );
 
   const alumnosActivos = alumnosDisciplina.filter(a => a.estado === 'Activo');
-  const alumnosConPago = new Set(pagosDisciplina.filter(p => p.estado === 'Pagado').map(p => p.alumnoId));
+  // Suma de abonos (pagos parciales o totales) de membresía por alumno, para soportar pagos parciales
+  const pagadoMembresiaPorAlumno = {};
+  pagosDisciplina
+    .filter(p => p.estado === 'Pagado' && !['suelta', 'privada', 'prueba', 'dayuse'].includes(p.tipo))
+    .forEach(p => {
+      pagadoMembresiaPorAlumno[p.alumnoId] = (pagadoMembresiaPorAlumno[p.alumnoId] || 0) + (parseInt(p.monto) || 0);
+    });
   // Solo alumnos con membresía mensual (o sin tipoMembresia definido, para compatibilidad)
-  const pagosPendientes = alumnosActivos.filter(a =>
-    (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual') && !alumnosConPago.has(a.id)
-  );
+  const pagosPendientes = alumnosActivos
+    .filter(a => !a.tipoMembresia || a.tipoMembresia === 'Membresía mensual')
+    .map(a => {
+      const total = precios[disciplinaActiva]?.[a.plan]?.[a.frecuencia] || PRECIOS_DEFAULT['Futvoley']?.[a.plan]?.[a.frecuencia] || 0;
+      const pagado = pagadoMembresiaPorAlumno[a.id] || 0;
+      return { ...a, _montoPendienteMembresia: Math.max(0, total - pagado) };
+    })
+    .filter(a => a._montoPendienteMembresia > 0);
   const preciosDisciplina = precios[disciplinaActiva] || PRECIOS_DEFAULT['Futvoley'];
   const preciosTiposActivos = preciosTipos[disciplinaActiva] || PRECIOS_TIPOS_DEFAULT['Futvoley'];
 
@@ -272,7 +283,7 @@ function App() {
   const pagosSueltasPendientes = [...pagosPendientesFirestore, ...sueltasVirtuales, ...extrasVirtuales];
 
   const montoPendiente =
-    pagosPendientes.reduce((sum, a) => sum + (preciosDisciplina[a.plan]?.[a.frecuencia] || 0), 0) +
+    pagosPendientes.reduce((sum, a) => sum + (a._montoPendienteMembresia || 0), 0) +
     pagosSueltasPendientes.reduce((sum, p) => sum + (parseInt(p.monto) || 0), 0);
   const montoCobrado = pagosDisciplina
     .filter(p => p.estado === 'Pagado')
@@ -792,10 +803,10 @@ function App() {
     }
   };
 
-  const handlePagarMembresia = async (alumno, metodo) => {
+  const handlePagarMembresia = async (alumno, metodo, montoOverride) => {
     const montoBase = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
     const montoQR = preciosQR[disciplinaActiva]?.[alumno.plan]?.[alumno.frecuencia] || Math.round(montoBase * 1.25);
-    const monto = metodo === 'Transferencia' ? montoQR : montoBase;
+    const monto = montoOverride != null ? montoOverride : (metodo === 'Transferencia' ? montoQR : montoBase);
     setSyncing(true);
     try {
       await addPago({
@@ -819,13 +830,31 @@ function App() {
     }
   };
 
-  const handleMarcarPagado = async (pagoId, metodo) => {
+  const handleMarcarPagado = async (pagoId, metodo, montoOverride) => {
     setSyncing(true);
     try {
       const pagoActual = pagos.find(p => p.id === pagoId);
-      const montoFinal = pagoActual && metodo === 'Transferencia'
-        ? Math.round(pagoActual.monto * 1.25)
-        : pagoActual?.monto;
+      // Pago parcial: se abona menos que la deuda total → queda un registro Pendiente con el resto
+      if (pagoActual && montoOverride != null && montoOverride < pagoActual.monto) {
+        await addPago({
+          alumnoId: pagoActual.alumnoId,
+          nombre: pagoActual.nombre,
+          mes: pagoActual.mes,
+          monto: montoOverride,
+          estado: 'Pagado',
+          metodo,
+          disciplina: pagoActual.disciplina,
+          tipo: pagoActual.tipo,
+          fecha: pagoActual.fecha,
+          horario: pagoActual.horario,
+        });
+        await updatePago(pagoId, { monto: pagoActual.monto - montoOverride });
+        await cargarDatos(true);
+        return { success: true };
+      }
+      const montoFinal = montoOverride != null
+        ? montoOverride
+        : (pagoActual && metodo === 'Transferencia' ? Math.round(pagoActual.monto * 1.25) : pagoActual?.monto);
       const update = { estado: 'Pagado', metodo };
       if (montoFinal !== undefined) update.monto = montoFinal;
       await updatePago(pagoId, update);
@@ -839,14 +868,45 @@ function App() {
   };
 
   // Paga una suelta virtual (no existe aún en Firestore): crea el registro directamente como Pagado
-  const handlePagarSueltaVirtual = async (pago, metodo) => {
+  const handlePagarSueltaVirtual = async (pago, metodo, montoOverride) => {
     setSyncing(true);
     try {
+      // Pago parcial: crea el pago y deja el resto como deuda Pendiente real en Firestore
+      if (montoOverride != null && montoOverride < pago.monto) {
+        await addPago({
+          alumnoId: pago.alumnoId,
+          nombre: pago.nombre,
+          mes: mesActual,
+          monto: montoOverride,
+          estado: 'Pagado',
+          metodo,
+          disciplina: pago.disciplina || disciplinaActiva,
+          tipo: 'suelta',
+          fecha: pago.fecha,
+          horario: pago.horario,
+        });
+        await addPago({
+          alumnoId: pago.alumnoId,
+          nombre: pago.nombre,
+          mes: mesActual,
+          monto: pago.monto - montoOverride,
+          estado: 'Pendiente',
+          disciplina: pago.disciplina || disciplinaActiva,
+          tipo: 'suelta',
+          fecha: pago.fecha,
+          horario: pago.horario,
+        });
+        await cargarDatos(true);
+        return { success: true };
+      }
+      const monto = montoOverride != null
+        ? montoOverride
+        : (metodo === 'Transferencia' ? Math.round(pago.monto * 1.25) : pago.monto);
       await addPago({
         alumnoId: pago.alumnoId,
         nombre: pago.nombre,
         mes: mesActual,
-        monto: metodo === 'Transferencia' ? Math.round(pago.monto * 1.25) : pago.monto,
+        monto,
         estado: 'Pagado',
         metodo,
         disciplina: pago.disciplina || disciplinaActiva,
@@ -855,8 +915,10 @@ function App() {
         horario: pago.horario,
       });
       await cargarDatos(true);
+      return { success: true };
     } catch (err) {
       setError('Error al registrar pago');
+      return { success: false };
     } finally {
       setSyncing(false);
     }
@@ -1161,8 +1223,7 @@ function App() {
     });
     // Membresías pendientes: alumnos activos sin registro de pago en Firestore
     pagosPendientes.forEach(a => {
-      const monto = preciosDisciplina[a.plan]?.[a.frecuencia] || 0;
-      rows.push([a.nombre, disciplinaActiva, mesActual, 'membresia', a.plan, a.frecuencia, monto, 'Pendiente', '', '', '']);
+      rows.push([a.nombre, disciplinaActiva, mesActual, 'membresia', a.plan, a.frecuencia, a._montoPendienteMembresia, 'Pendiente', '', '', '']);
     });
     downloadCSV(headers, rows, `pagos-${mesActual}.csv`);
     setExportModal(false);

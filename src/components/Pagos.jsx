@@ -32,6 +32,112 @@ const Avatar = ({ nombre }) => {
   );
 };
 
+const PagoModal = ({ item, onClose, onConfirm, syncing }) => {
+  const [monto, setMonto] = useState(String(item.monto));
+  const [metodo, setMetodo] = useState('Efectivo');
+  const [loading, setLoading] = useState(false);
+
+  const montoNum = parseInt(monto) || 0;
+  const valido = montoNum > 0 && montoNum <= item.monto;
+  const esParcial = valido && montoNum < item.monto;
+
+  const confirmar = async () => {
+    if (!valido) return;
+    setLoading(true);
+    try {
+      await onConfirm(montoNum, metodo);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-start justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar nombre={item.nombre} />
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Registrar cobro</p>
+              <h3 className="text-base font-black text-slate-900 truncate">{item.nombre}</h3>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors flex-shrink-0">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          <div className="flex items-center justify-between bg-amber-50 rounded-2xl px-4 py-3">
+            <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">Deuda total</span>
+            <span className="text-lg font-black text-amber-700">{formatMonto(item.monto)}</span>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Monto a cobrar</p>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
+              <input
+                type="number" value={monto} onChange={e => setMonto(e.target.value)} autoFocus
+                className="w-full pl-8 pr-4 py-3 bg-slate-50 rounded-xl text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button onClick={() => setMonto(String(item.monto))}
+                className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                  montoNum === item.monto ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}>
+                Total
+              </button>
+              <button onClick={() => setMonto(String(Math.round(item.monto / 2)))}
+                className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                  montoNum === Math.round(item.monto / 2) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}>
+                Mitad ({formatMonto(Math.round(item.monto / 2))})
+              </button>
+            </div>
+            {esParcial && (
+              <p className="text-xs text-amber-600 font-medium mt-2 flex items-center gap-1">
+                <Icon name="info" size={14} />
+                Queda pendiente {formatMonto(item.monto - montoNum)}
+              </p>
+            )}
+            {!valido && monto !== '' && (
+              <p className="text-xs text-error font-medium mt-2">El monto debe ser mayor a $0 y no superar la deuda</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Forma de pago</p>
+            <div className="grid grid-cols-2 gap-2">
+              {['Efectivo', 'Transferencia'].map(m => (
+                <button key={m} onClick={() => setMetodo(m)}
+                  className={`py-3 rounded-xl text-sm font-bold transition-all ${
+                    metodo === m ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}>{m}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer: botones equilibrados */}
+        <div className="px-6 py-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+          <button onClick={onClose}
+            className="py-3 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={confirmar} disabled={!valido || loading || syncing}
+            className="py-3 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
+            {loading ? '...' : esParcial ? 'Registrar parcial' : 'Confirmar pago'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Pagos = ({
   disciplinaActiva,
   mesActual,
@@ -92,22 +198,32 @@ const Pagos = ({
   const [filtroDeuda, setFiltroDeuda] = useState('todos');
   const [filtroHistorial, setFiltroHistorial] = useState('todos');
 
-  // ── Pago inline ───────────────────────────────────────────────────────────────
-  const [pagoActivoId, setPagoActivoId] = useState(null);
-  const [metodoPago, setMetodoPago] = useState('Efectivo');
-  const abrirPago  = (id) => { setPagoActivoId(id); setMetodoPago('Efectivo'); };
-  const cerrarPago = () => setPagoActivoId(null);
+  // ── Pago (modal) ──────────────────────────────────────────────────────────────
+  const [pagoModalItem, setPagoModalItem] = useState(null);
 
-  const pagarPago = async (pago, metodo) => {
-    if (pago.virtual) await onPagarSueltaVirtual(pago, metodo);
-    else              await onMarcarPagado(pago.id, metodo);
+  const pagarUnidad = async (pago, metodo, montoOverride) => {
+    if (pago.virtual) await onPagarSueltaVirtual(pago, metodo, montoOverride);
+    else              await onMarcarPagado(pago.id, metodo, montoOverride);
   };
 
-  const confirmarPago = async (item) => {
-    if (item.kind === 'membresia')     await onPagarMembresia(item.alumno, metodoPago);
-    else if (item.kind === 'pago-group') for (const p of item.pagos) await pagarPago(p, metodoPago);
-    else                                  await pagarPago(item.pago, metodoPago);
-    cerrarPago();
+  // Aplica el monto cobrado (puede ser parcial) sobre el item; en un grupo se
+  // reparte entre las clases sueltas más antiguas primero.
+  const pagarItemMonto = async (item, montoTotal, metodo) => {
+    if (item.kind === 'membresia') {
+      await onPagarMembresia(item.alumno, metodo, montoTotal);
+      return;
+    }
+    if (item.kind === 'pago-group') {
+      let restante = montoTotal;
+      for (const p of item.pagos) {
+        if (restante <= 0) break;
+        const aplicar = Math.min(restante, p.monto);
+        await pagarUnidad(p, metodo, aplicar);
+        restante -= aplicar;
+      }
+      return;
+    }
+    await pagarUnidad(item.pago, metodo, montoTotal);
   };
 
   const cancelarItem = (item) => {
@@ -139,7 +255,7 @@ const Pagos = ({
       nombre: a.nombre,
       sub: `${a.plan} • ${a.frecuencia}`,
       subColor: 'text-on-surface-variant',
-      monto: preciosDisciplina[a.plan]?.[a.frecuencia] || 0,
+      monto: a._montoPendienteMembresia ?? (preciosDisciplina[a.plan]?.[a.frecuencia] || 0),
       colLabel: 'Membresía', colValue: mesActual,
       whatsappHref: a.telefono ? getWhatsAppLink(a, mesActual, preciosDisciplina) : null,
       cancelable: false,
@@ -228,11 +344,7 @@ const Pagos = ({
     setBulkLoading(true);
     try {
       const seleccionActual = itemsPendientes.filter(i => seleccionados.has(i.id));
-      for (const item of seleccionActual) {
-        if (item.kind === 'membresia')       await onPagarMembresia(item.alumno, metodoBulk);
-        else if (item.kind === 'pago-group') for (const p of item.pagos) await pagarPago(p, metodoBulk);
-        else                                   await pagarPago(item.pago, metodoBulk);
-      }
+      for (const item of seleccionActual) await pagarItemMonto(item, item.monto, metodoBulk);
     } finally {
       setSeleccionados(new Set());
       setBulkLoading(false);
@@ -527,35 +639,12 @@ const Pagos = ({
                             <Icon name="close" size={16} />
                           </button>
                         )}
-                        <button onClick={() => abrirPago(item.id)}
+                        <button onClick={() => setPagoModalItem(item)}
                           className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-bold transition-colors">
                           Pagar
                         </button>
                       </div>
                     </div>
-                    {pagoActivoId === item.id && (
-                      <div className="mt-3 ml-14 p-4 bg-surface-container rounded-2xl space-y-3">
-                        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Forma de pago</p>
-                        <div className="flex gap-2">
-                          {['Efectivo', 'Transferencia'].map(m => (
-                            <button key={m} onClick={() => setMetodoPago(m)}
-                              className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                metodoPago === m ? 'bg-indigo-600 text-white' : 'bg-surface-container-high text-on-surface-variant'
-                              }`}>{m}</button>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={cerrarPago}
-                            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-container-high text-on-surface-variant hover:bg-surface-container transition-colors">
-                            Cancelar
-                          </button>
-                          <button onClick={() => confirmarPago(item)} disabled={syncing}
-                            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
-                            {syncing ? '...' : 'Confirmar'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -613,6 +702,19 @@ const Pagos = ({
             )}
           </div>
         </>
+      )}
+
+      {/* Modal de cobro */}
+      {pagoModalItem && (
+        <PagoModal
+          item={pagoModalItem}
+          syncing={syncing}
+          onClose={() => setPagoModalItem(null)}
+          onConfirm={async (montoNum, metodo) => {
+            await pagarItemMonto(pagoModalItem, montoNum, metodo);
+            setPagoModalItem(null);
+          }}
+        />
       )}
     </div>
   );
