@@ -61,16 +61,23 @@ const Alumnos = ({
 
   const abrirEditar = (alumno) => {
     setAlumnoEditando(alumno);
+    const diasElegidos = alumno.diasElegidos || [];
+    const horariosBase = alumno.horariosPorDia || (alumno.horario && diasElegidos.length
+      ? Object.fromEntries(diasElegidos.map(d => [d, alumno.horario]))
+      : {});
+    // Asegura que todo día tildado tenga un horario real guardado (por si
+    // quedó alguno sin persistir de una versión anterior) — si no, el
+    // selector lo mostraba con un valor "por default" que nunca se guardaba.
+    const horariosPorDia = { ...horariosBase };
+    diasElegidos.forEach(d => { if (!horariosPorDia[d]) horariosPorDia[d] = HORARIOS[0]; });
     setForm({
       nombre: alumno.nombre || '', apodo: alumno.apodo || '',
       telefono: alumno.telefono || '', instagram: alumno.instagram || '',
       fechaNacimiento: alumno.fechaNacimiento || '',
       tipoMembresia: alumno.tipoMembresia || '',
       plan: alumno.plan || 'Arena Basic', frecuencia: alumno.frecuencia || '2x sem',
-      diasElegidos: alumno.diasElegidos || [],
-      horariosPorDia: alumno.horariosPorDia || (alumno.horario && alumno.diasElegidos?.length
-        ? Object.fromEntries(alumno.diasElegidos.map(d => [d, alumno.horario]))
-        : {}),
+      diasElegidos,
+      horariosPorDia,
       disciplinas: alumno.disciplinas || [], referidoPor: alumno.referidoPor || '',
       estado: alumno.estado || 'Activo',
     });
