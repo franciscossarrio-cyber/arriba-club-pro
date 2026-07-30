@@ -9,7 +9,7 @@ const HORARIOS_GRILLA = Array.from({ length: 16 }, (_, i) =>
 );
 
 const HORARIOS_MANANA = HORARIOS_GRILLA.filter(h => parseInt(h) <= 16);
-const HORARIOS_TARDE  = HORARIOS_GRILLA.filter(h => parseInt(h) >= 17);
+const HORARIOS_TARDE  = HORARIOS_GRILLA.filter(h => parseInt(h) >= 14);
 
 const CANCHAS = [
   { id: 'cancha1',  label: 'Cancha 1',  tipo: 'cancha' },
@@ -168,7 +168,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
     if (ids.length === 0) {
       return (
         <button onClick={onClick}
-          className="w-full h-[42px] rounded-md border border-dashed border-slate-150 hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center group">
+          className="w-full h-full min-h-[34px] rounded-md border border-dashed border-slate-150 hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center group">
           <Icon name="add" size={11} className="text-slate-200 group-hover:text-primary/40 transition-colors" />
         </button>
       );
@@ -176,7 +176,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
     const discLabel = tipo === 'clasica' ? (slot?.disciplina || 'Clase') : badge.label;
     return (
       <button onClick={onClick}
-        className={`w-full h-[42px] border-l-[3px] ${badge.border} border border-slate-100 rounded-md bg-white hover:shadow-sm transition-all text-left px-1.5 flex items-center gap-1.5 overflow-hidden`}>
+        className={`w-full h-full min-h-[34px] border-l-[3px] ${badge.border} border border-slate-100 rounded-md bg-white hover:shadow-sm transition-all text-left px-1.5 flex items-center gap-1.5 overflow-hidden`}>
         <span className={`text-[9px] font-black uppercase truncate flex-1 leading-none ${badge.bg.split(' ')[1]}`}>
           {discLabel}
         </span>
@@ -844,9 +844,10 @@ const GrillaCancha = ({
       {/* ── Vista Día (panorama compacto) ───────────────────────────────── */}
       {vistaMode === 'dia' && (
         <div className="overflow-x-auto">
-          <div className="min-w-[540px] bg-surface-container-lowest rounded-2xl border border-slate-200/60 overflow-hidden shadow-sm">
+          <div className="min-w-[540px] flex flex-col bg-surface-container-lowest rounded-2xl border border-slate-200/60 overflow-hidden shadow-sm"
+            style={{ height: 'calc(100vh - 230px)', minHeight: '420px' }}>
             {/* Header de canchas */}
-            <div className="grid grid-cols-[44px_1fr_1fr_1fr_1fr] border-b border-slate-200/60">
+            <div className="grid grid-cols-[44px_1fr_1fr_1fr_1fr] border-b border-slate-200/60 shrink-0">
               <div className="py-2 border-r border-slate-200/40" />
               {CANCHAS.map((c, i) => (
                 <div key={c.id} className={`py-2 px-2 flex flex-col items-center gap-1 ${i < CANCHAS.length - 1 ? 'border-r border-slate-200/40' : ''}`}>
@@ -857,37 +858,39 @@ const GrillaCancha = ({
                 </div>
               ))}
             </div>
-            {/* Filas de horarios — mini/panorama */}
-            {horariosVisibles.map((horario, rowIdx) => {
-              const isLast  = rowIdx === horariosVisibles.length - 1;
-              const esAhora = esDiaHoy && horario === horaActual;
-              return (
-                <div key={horario}
-                  className={`grid grid-cols-[44px_1fr_1fr_1fr_1fr] ${!isLast ? 'border-b border-slate-200/40' : ''} ${esAhora ? 'bg-primary/5' : rowIdx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                  {/* Columna hora */}
-                  <div className="flex items-center justify-end pr-2 py-1 border-r border-slate-200/40 gap-1">
-                    {esAhora && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
-                    <span className={`text-[10px] font-bold tabular-nums ${esAhora ? 'text-primary' : 'text-slate-400'}`}>
-                      {horario}
-                    </span>
-                  </div>
-                  {CANCHAS.map((c, i) => (
-                    <div key={c.id} className={`p-1 ${i < CANCHAS.length - 1 ? 'border-r border-slate-200/40' : ''}`}>
-                      <SlotCell
-                        slot={slotsDia[`${c.id}|${horario}`]}
-                        alumnosMap={alumnosMap}
-                        asistencias={asistencias}
-                        fecha={fechaSeleccionada}
-                        horario={horario}
-                        onClick={() => openModal(c.id, horario)}
-                        mini
-                        profesoresMap={profesoresMap}
-                      />
+            {/* Filas de horarios — mini/panorama, se estiran para llenar el alto disponible */}
+            <div className="flex-1 flex flex-col min-h-0">
+              {horariosVisibles.map((horario, rowIdx) => {
+                const isLast  = rowIdx === horariosVisibles.length - 1;
+                const esAhora = esDiaHoy && horario === horaActual;
+                return (
+                  <div key={horario}
+                    className={`flex-1 min-h-0 grid grid-cols-[44px_1fr_1fr_1fr_1fr] ${!isLast ? 'border-b border-slate-200/40' : ''} ${esAhora ? 'bg-primary/5' : rowIdx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                    {/* Columna hora */}
+                    <div className="flex items-center justify-end pr-2 border-r border-slate-200/40 gap-1">
+                      {esAhora && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                      <span className={`text-[10px] font-bold tabular-nums ${esAhora ? 'text-primary' : 'text-slate-400'}`}>
+                        {horario}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              );
-            })}
+                    {CANCHAS.map((c, i) => (
+                      <div key={c.id} className={`p-1 h-full ${i < CANCHAS.length - 1 ? 'border-r border-slate-200/40' : ''}`}>
+                        <SlotCell
+                          slot={slotsDia[`${c.id}|${horario}`]}
+                          alumnosMap={alumnosMap}
+                          asistencias={asistencias}
+                          fecha={fechaSeleccionada}
+                          horario={horario}
+                          onClick={() => openModal(c.id, horario)}
+                          mini
+                          profesoresMap={profesoresMap}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
