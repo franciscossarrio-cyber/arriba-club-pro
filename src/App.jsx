@@ -93,6 +93,7 @@ function App() {
     addProfesor,
     deleteProfesor,
     repetirTurno,
+    actualizarSerie,
     agregarAlumnoAClase,
     removerAlumnoDeClase,
     setClase,
@@ -992,6 +993,22 @@ function App() {
     }
   };
 
+  // Aplica tipo/disciplina/profesor a TODAS las clases de una serie repetida
+  // (no toca los alumnos de cada clase individual).
+  const handleActualizarSerie = async (serieId, data) => {
+    setSyncing(true);
+    try {
+      await actualizarSerie(serieId, data);
+      await cargarDatos(true);
+      return { success: true };
+    } catch (err) {
+      setError(err?.message || 'Error al actualizar la serie');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleAgregarAlumnoSlot = async (canchaId, fecha, horario, alumnoId, slotTipo, slotDisciplina) => {
     setSyncing(true);
     try {
@@ -1501,6 +1518,7 @@ function App() {
               onRegistrarAsistencia={handleRegistrarAsistencia}
               onAsignarProfe={handleAsignarProfeSlot}
               onRepetirTurno={handleRepetirTurno}
+              onActualizarSerie={handleActualizarSerie}
               syncing={syncing}
               vistaMode={vistaGrilla}
               setVistaMode={setVistaGrilla}

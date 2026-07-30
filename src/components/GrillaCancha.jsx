@@ -282,13 +282,36 @@ const EditModal = ({
   canchaId, fecha, anio, horario, slot,
   alumnos, alumnosMap, asistencias,
   profesores, profeId,
-  onClose, onAgregar, onRemover, onCrearSlot, onRegistrarAsistencia, onAsignarProfe, onRepetirTurno,
+  onClose, onAgregar, onRemover, onCrearSlot, onRegistrarAsistencia, onAsignarProfe, onRepetirTurno, onActualizarSerie,
   syncing,
 }) => {
   const [search, setSearch] = useState('');
   const [tipo, setTipo] = useState(normTipo(slot?.tipo || 'clasica'));
   const [disciplina, setDisciplina] = useState(slot?.disciplina || 'Futvoley');
   const [pendingDisciplina, setPendingDisciplina] = useState(null);
+  // Cuando el turno pertenece a una serie repetida, cambios de tipo/disciplina/
+  // profesor preguntan si aplicar solo a esta clase o a toda la serie.
+  // Los alumnos NUNCA preguntan esto — se agregan/quitan siempre solo en esta clase.
+  const serieId = slot?.serieId || null;
+  const [pendingSerie, setPendingSerie] = useState(null); // { label, aplicarEsta, datosSerie }
+  const [serieLoading, setSerieLoading] = useState(false);
+
+  const conConfirmSerie = (label, aplicarEsta, datosSerie) => {
+    if (serieId) setPendingSerie({ label, aplicarEsta, datosSerie });
+    else aplicarEsta();
+  };
+
+  const resolverPendingSerie = async (todas) => {
+    if (!pendingSerie) return;
+    setSerieLoading(true);
+    try {
+      if (todas) await onActualizarSerie(serieId, pendingSerie.datosSerie);
+      else pendingSerie.aplicarEsta();
+    } finally {
+      setSerieLoading(false);
+      setPendingSerie(null);
+    }
+  };
   // Para turnos nuevos, el tipo (Clásica/Privada/Day Use) hay que confirmarlo
   // explícitamente antes de poder agregar alumnos — evita que el turno quede
   // guardado como "Clásica" por default y se facture mal (ej: Day Use como suelta).
@@ -392,6 +415,26 @@ const EditModal = ({
 
         {/* ── Body scrollable ── */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+
+          {/* Confirmación: cambio en turno de una serie repetida */}
+          {pendingSerie && (
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl space-y-3">
+              <p className="text-sm font-bold text-slate-800">{pendingSerie.label}</p>
+              <p className="text-xs text-slate-500">Este turno es parte de una repetición. ¿Aplicás el cambio solo a esta clase o a todas las de la serie?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => resolverPendingSerie(false)}
+                  disabled={serieLoading}
+                  className="flex-1 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >Solo esta clase</button>
+                <button
+                  onClick={() => resolverPendingSerie(true)}
+                  disabled={serieLoading}
+                  className="flex-1 py-2.5 text-xs font-bold rounded-xl bg-primary text-white disabled:opacity-50"
+                >{serieLoading ? '...' : 'Todas las de la serie'}</button>
+              </div>
+            </div>
+          )}
 
           {/* Alumnos */}
           <section>
@@ -524,7 +567,14 @@ const EditModal = ({
               {Object.entries(TIPO_CONFIG).map(([key, cfg]) => (
                 <button
                   key={key}
-                  onClick={() => { setTipo(key); setTipoConfirmado(true); onCrearSlot(canchaId, fecha, horario, key, disciplina); }}
+                  onClick={() => {
+                    setTipo(key); setTipoConfirmado(true);
+                    conConfirmSerie(
+                      `Tipo: ${cfg.label}`,
+                      () => onCrearSlot(canchaId, fecha, horario, key, disciplina),
+                      { tipo: key },
+                    );
+                  }}
                   className={`py-3 rounded-2xl text-sm font-bold transition-all flex flex-col items-center gap-1.5 ${
                     tipo === key
                       ? `${cfg.activeBg} ${cfg.activeText} shadow-md`
@@ -551,7 +601,14 @@ const EditModal = ({
                     onClick={() => {
                       if (d === disciplina) return;
                       if (ids.length > 0) setPendingDisciplina(d);
-                      else { setDisciplina(d); onCrearSlot(canchaId, fecha, horario, tipo, d, false); }
+                      else {
+                        setDisciplina(d);
+                        conConfirmSerie(
+                          `Disciplina: ${d}`,
+                          () => onCrearSlot(canchaId, fecha, horario, tipo, d, false),
+                          { disciplina: d },
+                        );
+                      }
                     }}
                     className={`py-2.5 px-3 rounded-xl text-sm font-bold transition-all border-2 ${
                       activo
@@ -573,7 +630,16 @@ const EditModal = ({
                 <div className="flex gap-2">
                   <button onClick={() => setPendingDisciplina(null)} className="flex-1 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">Cancelar</button>
                   <button
-                    onClick={() => { setDisciplina(pendingDisciplina); onCrearSlot(canchaId, fecha, horario, tipo, pendingDisciplina, true); setPendingDisciplina(null); }}
+                    onClick={() => {
+                      const nuevaDisciplina = pendingDisciplina;
+                      setDisciplina(nuevaDisciplina);
+                      setPendingDisciplina(null);
+                      conConfirmSerie(
+                        `Disciplina: ${nuevaDisciplina}`,
+                        () => onCrearSlot(canchaId, fecha, horario, tipo, nuevaDisciplina, true),
+                        { disciplina: nuevaDisciplina },
+                      );
+                    }}
                     disabled={syncing}
                     className="flex-1 py-2 text-xs font-bold rounded-xl bg-red-500 text-white disabled:opacity-50"
                   >Confirmar</button>
@@ -588,7 +654,15 @@ const EditModal = ({
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Profesor</p>
               <select
                 value={profeId || ''}
-                onChange={e => onAsignarProfe(canchaId, fecha, horario, disciplina, e.target.value || null)}
+                onChange={e => {
+                  const nuevoProfeId = e.target.value || null;
+                  const nombreProfe = profesores.find(p => p.id === nuevoProfeId)?.nombre || 'Sin asignar';
+                  conConfirmSerie(
+                    `Profesor: ${nombreProfe}`,
+                    () => onAsignarProfe(canchaId, fecha, horario, disciplina, nuevoProfeId),
+                    { profesorId: nuevoProfeId },
+                  );
+                }}
                 disabled={syncing}
                 className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
               >
@@ -730,6 +804,7 @@ const GrillaCancha = ({
   onRegistrarAsistencia,
   onAsignarProfe,
   onRepetirTurno,
+  onActualizarSerie,
   syncing,
   vistaMode,
   setVistaMode,
@@ -1110,6 +1185,7 @@ const GrillaCancha = ({
           onRegistrarAsistencia={onRegistrarAsistencia}
           onAsignarProfe={onAsignarProfe}
           onRepetirTurno={onRepetirTurno}
+          onActualizarSerie={onActualizarSerie}
           syncing={syncing}
         />
       )}

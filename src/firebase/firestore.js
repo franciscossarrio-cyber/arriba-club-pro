@@ -307,6 +307,10 @@ export async function repetirTurno(
   }
   if (fechas.length === 0) return [];
 
+  // Identifica todas las clases generadas por esta repetición, para poder
+  // luego preguntar "¿modificar todas o solo esta?" y aplicarlo en bloque.
+  const serieId = `serie_${canchaId}_${horario}_${Date.now()}`;
+
   await Promise.all(
     fechas.map(({ fecha, mes }) => {
       const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
@@ -319,6 +323,7 @@ export async function repetirTurno(
           mes,
           disciplina,
           tipo,
+          serieId,
           ...(alumnoIds?.length ? { alumnos: arrayUnion(...alumnoIds) } : {}),
           ...(profesorId ? { profesorId } : {}),
           creadoEn: serverTimestamp(),
@@ -329,6 +334,30 @@ export async function repetirTurno(
   );
 
   return fechas.map(f => f.fecha);
+}
+
+/**
+ * Devuelve todas las clases que pertenecen a una serie repetida (`serieId`).
+ */
+export async function getClasesPorSerie(serieId) {
+  const q = query(collection(db, 'clases'), where('serieId', '==', serieId));
+  const snap = await getDocs(q);
+  return snapToArray(snap);
+}
+
+/**
+ * Aplica un cambio (tipo, disciplina y/o profesorId) a todas las clases de
+ * una serie repetida. No toca los alumnos de cada clase individual.
+ * @param {string} serieId
+ * @param {{tipo?: string, disciplina?: string, profesorId?: string|null}} data
+ * @returns {number} cantidad de clases actualizadas
+ */
+export async function actualizarSerie(serieId, data) {
+  const clases = await getClasesPorSerie(serieId);
+  await Promise.all(
+    clases.map(c => setDoc(doc(db, 'clases', c.id), data, { merge: true }))
+  );
+  return clases.length;
 }
 
 // ─── ASISTENCIAS (subcol de clases) ──────────────────────────────────────────

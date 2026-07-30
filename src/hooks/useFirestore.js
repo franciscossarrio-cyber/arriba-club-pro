@@ -112,6 +112,12 @@ export const useFirestore = () => {
      * @param {{disciplina: string, tipo: string, alumnoIds: string[]}} datos
      */
     repetirTurno:  wrap(fs.repetirTurno),
+    /**
+     * Aplica tipo/disciplina/profesorId a todas las clases de una serie repetida.
+     * @param {string} serieId
+     * @param {{tipo?: string, disciplina?: string, profesorId?: string|null}} data
+     */
+    actualizarSerie: wrap(fs.actualizarSerie),
 
     // ── Cambios de Turno ──────────────────────────────────────────────────
     getCambiosTurno:   wrap(fs.getCambiosTurno),
