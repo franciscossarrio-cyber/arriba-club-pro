@@ -17,6 +17,7 @@ import {
   addDoc,
   setDoc,
   getDoc,
+  getDocFromServer,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -370,7 +371,9 @@ export async function actualizarSerie(serieId, data) {
  */
 export async function eliminarClase(canchaId, fecha, horario, anio) {
   const cId = claseId(canchaId, fecha, horario);
-  const claseSnap = await getDoc(doc(db, 'clases', cId));
+  // Lectura forzada al servidor (no caché local) para no perder alumnos
+  // agregados justo antes de borrar, que todavía no llegaron a la caché.
+  const claseSnap = await getDocFromServer(doc(db, 'clases', cId)).catch(() => getDoc(doc(db, 'clases', cId)));
   const claseData = claseSnap.exists() ? claseSnap.data() : null;
   const alumnoIds = claseData?.alumnos || [];
   const anioReal = anio || (claseData?.mes ? parseInt(claseData.mes.split(' ')[1], 10) : null);
