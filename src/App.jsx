@@ -28,6 +28,7 @@ import {
   getFechasClaseMes,
   getFechasMes,
   parseMesActual,
+  estabaActivoEnMes,
   getClasesDelMes,
   formatMonto,
   buscarAlumno,
@@ -99,8 +100,8 @@ function App() {
     setClase,
     getConfig,
     setConfig,
-    getConfigMes,
     setConfigMes,
+    getTodasConfigMes,
   } = useFirestore();
 
   // Computed
@@ -122,17 +123,24 @@ function App() {
   const cargarDatos = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [alumnosData, pagosData, asistData, clasesData, profesData, cfgGlobal, cfgMes] = await Promise.all([
+      const [alumnosData, pagosData, asistData, clasesData, profesData, cfgGlobal, todasConfigMes] = await Promise.all([
         getAlumnos(),
         getPagos(mesActual),
         getAsistencias(mesActual).catch(() => []),
         getClasesMes(mesActual).catch(() => []),
         getProfesores().catch(() => []),
         getConfig().catch(() => null),
-        getConfigMes(mesActual).catch(() => null),
+        getTodasConfigMes().catch(() => []),
       ]);
-      // El config del mes tiene prioridad; el global es fallback para campos no definidos aún
-      const configData = { ...(cfgGlobal || {}), ...(cfgMes || {}) };
+      // Un cambio de precio en un mes "hereda" hacia los meses siguientes (no
+      // tiene su propio config todavía) pero no toca los meses anteriores:
+      // se mergean en orden cronológico todas las config mensuales hasta
+      // (e incluyendo) el mes actual, sobre la base del config global.
+      const configData = todasConfigMes
+        .map(c => ({ ...c, ...parseMesActual(c.mes) }))
+        .filter(c => c.anio < anio || (c.anio === anio && c.mesNum <= mesNum))
+        .sort((a, b) => (a.anio - b.anio) || (a.mesNum - b.mesNum))
+        .reduce((acc, c) => ({ ...acc, ...c }), { ...(cfgGlobal || {}) });
 
       setAlumnos(alumnosData.map(a => ({
         ...a,
@@ -200,7 +208,7 @@ function App() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [getAlumnos, getPagos, getAsistencias, getClasesMes, getProfesores, getConfig, getConfigMes, mesActual]);
+  }, [getAlumnos, getPagos, getAsistencias, getClasesMes, getProfesores, getConfig, getTodasConfigMes, mesActual, mesNum, anio]);
 
   useEffect(() => {
     if (autenticado) cargarDatos();
@@ -214,7 +222,7 @@ function App() {
     p.disciplina === disciplinaActiva || (!p.disciplina && disciplinaActiva === 'Futvoley')
   );
 
-  const alumnosActivos = alumnosDisciplina.filter(a => a.estado === 'Activo');
+  const alumnosActivos = alumnosDisciplina.filter(a => estabaActivoEnMes(a, mesNum, anio));
   // Suma de abonos (pagos parciales o totales) de membresía por alumno, para soportar pagos parciales
   const pagadoMembresiaPorAlumno = {};
   pagosDisciplina
@@ -354,6 +362,16 @@ function App() {
     setSyncing(true);
     try {
       const { id, creadoEn, ...data } = alumno;
+      // Al pasar a Inactivo se registra la fecha de baja, para que los meses
+      // anteriores sigan mostrando al alumno como activo (deudas, reportes).
+      // Al reactivarlo se limpia, vuelve a contar como activo desde ahora.
+      const anterior = alumnos.find(a => a.id === id);
+      if (data.estado === 'Inactivo' && anterior?.estado !== 'Inactivo') {
+        const hoy = new Date();
+        data.fechaBaja = `${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`;
+      } else if (data.estado === 'Activo') {
+        data.fechaBaja = null;
+      }
       await updateAlumno(id, data);
       await cargarDatos(true);
     } catch (err) {
@@ -1249,7 +1267,7 @@ function App() {
     // 2. Slots virtuales: alumnos con membresía mensual y diasElegidos
     const todasLasFechas = getFechasMes(mesNum, anio);
     alumnos
-      .filter(a => a.estado === 'Activo' && a.diasElegidos?.length > 0 && a.horario && (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual'))
+      .filter(a => estabaActivoEnMes(a, mesNum, anio) && a.diasElegidos?.length > 0 && a.horario && (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual'))
       .forEach(alumno => {
         todasLasFechas.forEach(fecha => {
           const [d, m] = fecha.split('/').map(Number);

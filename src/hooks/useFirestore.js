@@ -130,6 +130,7 @@ export const useFirestore = () => {
     setConfig:    wrap(fs.setConfig),
     getConfigMes: wrap(fs.getConfigMes),
     setConfigMes: wrap(fs.setConfigMes),
+    getTodasConfigMes: wrap(fs.getTodasConfigMes),
 
     // ── Profesores ────────────────────────────────────────────────────────
     getProfesores:   wrap(fs.getProfesores),

@@ -85,6 +85,21 @@ export const parseMesActual = (mesActual) => {
   };
 };
 
+// Determina si un alumno debe contarse como activo para un mes/año dado.
+// Un alumno actualmente Inactivo sigue contando como activo en los meses
+// anteriores al mes de su baja (fechaBaja "dd/mm/yyyy"), para no reescribir
+// el historial. Desde el mes de la baja en adelante, ya no cuenta.
+export const estabaActivoEnMes = (alumno, mesNum, anio) => {
+  if (alumno.estado === 'Activo') return true;
+  if (!alumno.fechaBaja) return false;
+  const partes = alumno.fechaBaja.split('/').map(Number);
+  const mesBaja = partes[1];
+  const anioBaja = partes[2];
+  if (anio < anioBaja) return true;
+  if (anio === anioBaja && mesNum < mesBaja) return true;
+  return false;
+};
+
 // Generar link de WhatsApp
 export const getWhatsAppLink = (alumno, mesActual, preciosDisciplina) => {
   let telefono = alumno.telefono?.replace(/\D/g, '') || '';

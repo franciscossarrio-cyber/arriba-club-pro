@@ -502,6 +502,21 @@ export async function setConfigMes(mes, data) {
   await setDoc(doc(db, 'config', `precios-${key}`), data, { merge: true });
 }
 
+/**
+ * Devuelve todas las configs mensuales guardadas (docs "precios-{Mes-Año}"),
+ * cada una con su `mes` en formato "Mes Año". Se usa para "heredar" el precio
+ * vigente en meses futuros sin tocar los meses anteriores al cambio.
+ */
+export async function getTodasConfigMes() {
+  const snap = await getDocs(collection(db, 'config'));
+  return snap.docs
+    .filter(d => d.id.startsWith('precios-'))
+    .map(d => ({
+      mes: d.id.replace('precios-', '').replace('-', ' '),
+      ...d.data(),
+    }));
+}
+
 // ─── PROFESORES ──────────────────────────────────────────────────────────────
 
 /** Devuelve todos los profesores. */
