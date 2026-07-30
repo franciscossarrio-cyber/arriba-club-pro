@@ -283,6 +283,7 @@ const EditModal = ({
   alumnos, alumnosMap, asistencias,
   profesores, profeId,
   onClose, onAgregar, onRemover, onCrearSlot, onRegistrarAsistencia, onAsignarProfe, onRepetirTurno, onActualizarSerie,
+  onEliminarTurno, onEliminarSerie,
   syncing,
 }) => {
   const [search, setSearch] = useState('');
@@ -310,6 +311,22 @@ const EditModal = ({
     } finally {
       setSerieLoading(false);
       setPendingSerie(null);
+    }
+  };
+
+  // ── Eliminar turno ────────────────────────────────────────────────────────
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
+  const [eliminarLoading, setEliminarLoading] = useState(false);
+
+  const eliminarTurno = async (todaLaSerie) => {
+    setEliminarLoading(true);
+    try {
+      if (todaLaSerie) await onEliminarSerie(serieId);
+      else await onEliminarTurno(canchaId, fecha, horario);
+      onClose();
+    } finally {
+      setEliminarLoading(false);
+      setConfirmarEliminar(false);
     }
   };
   // Para turnos nuevos, el tipo (Clásica/Privada/Day Use) hay que confirmarlo
@@ -782,6 +799,47 @@ const EditModal = ({
               </div>
             )}
           </section>
+
+          {/* Eliminar turno */}
+          {slot && (
+            <section>
+              {!confirmarEliminar ? (
+                <button
+                  onClick={() => setConfirmarEliminar(true)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold text-error hover:bg-error/5 transition-colors"
+                >
+                  <Icon name="delete" size={18} />
+                  Eliminar este turno
+                </button>
+              ) : (
+                <div className="p-4 bg-error/5 border border-error/20 rounded-2xl space-y-3">
+                  <p className="text-sm font-bold text-slate-800">
+                    {serieId ? '¿Eliminar solo esta clase o toda la serie repetida?' : '¿Eliminar este turno? Se van a quitar todos los alumnos y su asistencia.'}
+                  </p>
+                  <p className="text-xs text-slate-500">Esta acción no se puede deshacer.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmarEliminar(false)}
+                      disabled={eliminarLoading}
+                      className="flex-1 py-2.5 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >Cancelar</button>
+                    <button
+                      onClick={() => eliminarTurno(false)}
+                      disabled={eliminarLoading}
+                      className="flex-1 py-2.5 text-xs font-bold rounded-xl bg-error text-white disabled:opacity-50"
+                    >{eliminarLoading ? '...' : serieId ? 'Solo esta clase' : 'Eliminar'}</button>
+                    {serieId && (
+                      <button
+                        onClick={() => eliminarTurno(true)}
+                        disabled={eliminarLoading}
+                        className="flex-1 py-2.5 text-xs font-bold rounded-xl bg-error text-white disabled:opacity-50"
+                      >{eliminarLoading ? '...' : 'Toda la serie'}</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         {/* ── Footer ── */}
@@ -827,6 +885,8 @@ const GrillaCancha = ({
   onAsignarProfe,
   onRepetirTurno,
   onActualizarSerie,
+  onEliminarTurno,
+  onEliminarSerie,
   syncing,
   vistaMode,
   setVistaMode,
@@ -1217,6 +1277,8 @@ const GrillaCancha = ({
           onAsignarProfe={onAsignarProfe}
           onRepetirTurno={onRepetirTurno}
           onActualizarSerie={onActualizarSerie}
+          onEliminarTurno={onEliminarTurno}
+          onEliminarSerie={onEliminarSerie}
           syncing={syncing}
         />
       )}

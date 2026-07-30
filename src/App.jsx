@@ -95,6 +95,8 @@ function App() {
     deleteProfesor,
     repetirTurno,
     actualizarSerie,
+    eliminarClase,
+    eliminarSerie,
     agregarAlumnoAClase,
     removerAlumnoDeClase,
     setClase,
@@ -946,6 +948,34 @@ function App() {
     }
   };
 
+  const handleEditarPago = async (pagoId, data) => {
+    setSyncing(true);
+    try {
+      await updatePago(pagoId, data);
+      await cargarDatos(true);
+      return { success: true };
+    } catch (err) {
+      setError('Error al editar el pago');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleEliminarPago = async (pagoId) => {
+    setSyncing(true);
+    try {
+      await deletePago(pagoId);
+      await cargarDatos(true);
+      return { success: true };
+    } catch (err) {
+      setError('Error al eliminar el pago');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleUpdatePrecioTipo = (disciplina, tipo, valor) => {
     setPreciosTipos(prev => {
       const next = {
@@ -1021,6 +1051,36 @@ function App() {
       return { success: true };
     } catch (err) {
       setError(err?.message || 'Error al actualizar la serie');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Elimina un turno completo (todos los alumnos y su asistencia) sin sacarlos uno por uno
+  const handleEliminarTurno = async (canchaId, fecha, horario) => {
+    setSyncing(true);
+    try {
+      await eliminarClase(canchaId, fecha, horario);
+      await cargarDatos(true);
+      return { success: true };
+    } catch (err) {
+      setError(err?.message || 'Error al eliminar el turno');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Elimina TODAS las clases de una serie repetida
+  const handleEliminarSerie = async (serieId) => {
+    setSyncing(true);
+    try {
+      await eliminarSerie(serieId);
+      await cargarDatos(true);
+      return { success: true };
+    } catch (err) {
+      setError(err?.message || 'Error al eliminar la serie');
       return { success: false };
     } finally {
       setSyncing(false);
@@ -1501,6 +1561,8 @@ function App() {
               onMarcarPagado={handleMarcarPagado}
               onPagarSueltaVirtual={handlePagarSueltaVirtual}
               onCancelarSuelta={handleCancelarSuelta}
+              onEditarPago={handleEditarPago}
+              onEliminarPago={handleEliminarPago}
               syncing={syncing}
             />
           )}
@@ -1538,6 +1600,8 @@ function App() {
               onAsignarProfe={handleAsignarProfeSlot}
               onRepetirTurno={handleRepetirTurno}
               onActualizarSerie={handleActualizarSerie}
+              onEliminarTurno={handleEliminarTurno}
+              onEliminarSerie={handleEliminarSerie}
               syncing={syncing}
               vistaMode={vistaGrilla}
               setVistaMode={setVistaGrilla}

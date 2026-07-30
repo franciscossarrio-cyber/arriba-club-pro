@@ -118,6 +118,10 @@ export const useFirestore = () => {
      * @param {{tipo?: string, disciplina?: string, profesorId?: string|null}} data
      */
     actualizarSerie: wrap(fs.actualizarSerie),
+    /** Elimina una clase completa (alumnos + asistencia) de una cancha/fecha/horario. */
+    eliminarClase: wrap(fs.eliminarClase),
+    /** Elimina todas las clases de una serie repetida. @param {string} serieId */
+    eliminarSerie: wrap(fs.eliminarSerie),
 
     // ── Cambios de Turno ──────────────────────────────────────────────────
     getCambiosTurno:   wrap(fs.getCambiosTurno),

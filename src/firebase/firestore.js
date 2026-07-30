@@ -360,6 +360,27 @@ export async function actualizarSerie(serieId, data) {
   return clases.length;
 }
 
+/**
+ * Elimina una clase completa (todos sus alumnos y su asistencia registrada)
+ * de una cancha/fecha/horario, sin necesidad de sacar alumnos uno por uno.
+ */
+export async function eliminarClase(canchaId, fecha, horario) {
+  const cId = claseId(canchaId, fecha, horario);
+  const asistSnap = await getDocs(collection(db, 'clases', cId, 'asistencias'));
+  await Promise.all(asistSnap.docs.map(d => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, 'clases', cId));
+}
+
+/**
+ * Elimina TODAS las clases de una serie repetida (`serieId`).
+ * @returns {number} cantidad de clases eliminadas
+ */
+export async function eliminarSerie(serieId) {
+  const clases = await getClasesPorSerie(serieId);
+  await Promise.all(clases.map(c => eliminarClase(c.canchaId, c.fecha, c.horario)));
+  return clases.length;
+}
+
 // ─── ASISTENCIAS (subcol de clases) ──────────────────────────────────────────
 //
 // Ruta: clases/{claseId}/asistencias/{alumnoId}

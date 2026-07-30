@@ -138,6 +138,117 @@ const PagoModal = ({ item, onClose, onConfirm, syncing }) => {
   );
 };
 
+const EditarPagoModal = ({ item, onClose, onGuardar, onEliminar, syncing }) => {
+  const [monto, setMonto] = useState(String(item.monto));
+  const [metodo, setMetodo] = useState(item.metodo || 'Efectivo');
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const montoNum = parseInt(monto) || 0;
+  const valido = montoNum > 0;
+
+  const guardar = async () => {
+    if (!valido) return;
+    setLoading(true);
+    try {
+      await onGuardar(item.id, { monto: montoNum, metodo });
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const eliminar = async () => {
+    setLoading(true);
+    try {
+      await onEliminar(item.id);
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
+        <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-start justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar nombre={item.nombre} />
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Editar pago</p>
+              <h3 className="text-base font-black text-slate-900 truncate">{item.nombre}</h3>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors flex-shrink-0">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Monto</p>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
+              <input
+                type="number" value={monto} onChange={e => setMonto(e.target.value)}
+                className="w-full pl-8 pr-4 py-3 bg-slate-50 rounded-xl text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all"
+              />
+            </div>
+            {!valido && monto !== '' && (
+              <p className="text-xs text-error font-medium mt-2">El monto debe ser mayor a $0</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Forma de pago</p>
+            <div className="grid grid-cols-2 gap-2">
+              {['Efectivo', 'Transferencia'].map(m => (
+                <button key={m} onClick={() => setMetodo(m)}
+                  className={`py-3 rounded-xl text-sm font-bold transition-all ${
+                    metodo === m ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}>{m}</button>
+              ))}
+            </div>
+          </div>
+
+          {confirmarEliminar ? (
+            <div className="p-3 bg-error/5 border border-error/20 rounded-xl space-y-2">
+              <p className="text-xs text-error font-semibold">¿Eliminar este pago? No se puede deshacer.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmarEliminar(false)} disabled={loading}
+                  className="flex-1 py-2 text-xs font-bold rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-50">
+                  Cancelar
+                </button>
+                <button onClick={eliminar} disabled={loading}
+                  className="flex-1 py-2 text-xs font-bold rounded-lg bg-error text-white disabled:opacity-50">
+                  {loading ? '...' : 'Eliminar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmarEliminar(true)}
+              className="text-xs font-bold text-error hover:underline flex items-center gap-1.5">
+              <Icon name="delete" size={14} />
+              Eliminar pago
+            </button>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+          <button onClick={onClose}
+            className="py-3 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={guardar} disabled={!valido || loading || syncing}
+            className="py-3 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
+            {loading ? '...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Pagos = ({
   disciplinaActiva,
   mesActual,
@@ -159,6 +270,8 @@ const Pagos = ({
   onMarcarPagado,
   onPagarSueltaVirtual,
   onCancelarSuelta,
+  onEditarPago,
+  onEliminarPago,
   syncing
 }) => {
   // ── Form ─────────────────────────────────────────────────────────────────────
@@ -200,6 +313,7 @@ const Pagos = ({
 
   // ── Pago (modal) ──────────────────────────────────────────────────────────────
   const [pagoModalItem, setPagoModalItem] = useState(null);
+  const [editPagoItem, setEditPagoItem] = useState(null);
 
   const pagarUnidad = async (pago, metodo, montoOverride) => {
     if (pago.virtual) await onPagarSueltaVirtual(pago, metodo, montoOverride);
@@ -696,6 +810,13 @@ const Pagos = ({
                       </p>
                     </div>
                     <p className={`font-bold text-sm flex-shrink-0 ${item.tipoInfo.color}`}>{formatMonto(item.monto)}</p>
+                    <button
+                      onClick={() => setEditPagoItem(item)}
+                      className="w-8 h-8 flex items-center justify-center rounded-full text-slate-300 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
+                      title="Editar o eliminar"
+                    >
+                      <Icon name="edit" size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -714,6 +835,16 @@ const Pagos = ({
             await pagarItemMonto(pagoModalItem, montoNum, metodo);
             setPagoModalItem(null);
           }}
+        />
+      )}
+
+      {editPagoItem && (
+        <EditarPagoModal
+          item={editPagoItem}
+          syncing={syncing}
+          onClose={() => setEditPagoItem(null)}
+          onGuardar={onEditarPago}
+          onEliminar={onEliminarPago}
         />
       )}
     </div>
