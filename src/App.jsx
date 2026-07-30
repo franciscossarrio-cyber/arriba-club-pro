@@ -1134,15 +1134,27 @@ function App() {
         : null;
       const fechaInicio = `01/${String(mesNum).padStart(2, '0')}`;
 
+      // Una cancha está "ocupada" para esta disciplina si ya tiene turnos de
+      // OTRA disciplina en ese mismo día de la semana + horario — evita que
+      // dos disciplinas distintas se mezclen en el mismo turno.
+      const canchaLibre = (canchaId, horario, dia) => !ocupacion.some(s => {
+        if (s.canchaId !== canchaId || s.horario !== horario) return false;
+        if (!s.disciplina || s.disciplina === disciplinaActiva) return false;
+        const [dd, mm] = (s.fecha || '').split('/').map(Number);
+        if (!dd || !mm) return false;
+        return new Date(anio, mm - 1, dd).getDay() === dia;
+      });
+
       const trabajos = [];
       let sinCupo = 0;
       Object.entries(grupos).forEach(([key, alumnoIds]) => {
         const [diaStr, horario] = key.split('|');
         const dia = Number(diaStr);
+        const canchasLibres = ordenCanchas.filter(c => canchaLibre(c, horario, dia));
         const chunks = [];
         for (let i = 0; i < alumnoIds.length; i += 8) chunks.push(alumnoIds.slice(i, i + 8));
         chunks.forEach((chunk, i) => {
-          const canchaId = ordenCanchas[i];
+          const canchaId = canchasLibres[i];
           if (!canchaId) { sinCupo += chunk.length; return; }
           trabajos.push(
             repetirTurno(canchaId, horario, [dia], fechaInicio, mesNum, anio, { modo: 'mes' }, {
