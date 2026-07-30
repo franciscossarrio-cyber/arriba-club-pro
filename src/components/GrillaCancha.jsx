@@ -520,6 +520,28 @@ const EditModal = ({
                     ))}
                   </div>
                 </div>
+              ) : profesores?.length > 0 && !profeId ? (
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl space-y-2.5">
+                  <p className="text-xs font-semibold text-amber-700">Asigná un profesor antes de agregar alumnos:</p>
+                  <select
+                    value=""
+                    onChange={e => {
+                      const nuevoProfeId = e.target.value || null;
+                      conConfirmSerie(
+                        `Profesor: ${profesores.find(p => p.id === nuevoProfeId)?.nombre || 'Sin asignar'}`,
+                        () => onAsignarProfe(canchaId, fecha, horario, disciplina, nuevoProfeId),
+                        { profesorId: nuevoProfeId },
+                      );
+                    }}
+                    disabled={syncing}
+                    className="w-full px-4 py-3 bg-white border border-amber-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="" disabled>Elegir profesor...</option>
+                    {profesores.filter(p => p.estado === 'Activo').map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
               ) : (
                 <>
                   <div className="relative">
