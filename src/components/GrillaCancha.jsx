@@ -94,9 +94,9 @@ function offsetSemana(fecha, offset, mesNum, anio) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
-// ─── Helper: computa slots de un día (Firestore + virtuales) ─────────────────
+// ─── Helper: computa slots de un día (solo lo guardado en Firestore) ─────────
 
-function computeSlots(fecha, ocupacion, alumnos, alumnosIdSet, anio) {
+function computeSlots(fecha, ocupacion, alumnos, alumnosIdSet) {
   const map = {};
   ocupacion
     .filter(s => s.fecha === fecha)
@@ -106,42 +106,6 @@ function computeSlots(fecha, ocupacion, alumnos, alumnosIdSet, anio) {
         alumnos: (s.alumnos || []).filter(id => alumnosIdSet.has(id)),
       };
     });
-
-  const [dd, mm] = fecha.split('/').map(Number);
-  const dow = new Date(anio, mm - 1, dd).getDay();
-
-  const gruposVirtuales = {};
-  alumnos
-    .filter(a => a.estado === 'Activo' && a.diasElegidos?.includes(dow) && a.horario && a.tipoMembresia !== 'Clases sueltas')
-    .forEach(a => {
-      const disc = a.disciplinas?.[0] || 'Futvoley';
-      const k = `${a.horario}|${disc}`;
-      if (!gruposVirtuales[k]) gruposVirtuales[k] = { horario: a.horario, disciplina: disc, ids: [] };
-      gruposVirtuales[k].ids.push(a.id);
-    });
-
-  Object.values(gruposVirtuales).forEach(grupo => {
-    const key = `cancha3|${grupo.horario}`;
-    if (map[key]) {
-      const disciplinaSlot = map[key].disciplina || 'Futvoley';
-      if (grupo.disciplina !== disciplinaSlot) return;
-      const removidos = map[key].removidos || [];
-      grupo.ids.forEach(id => {
-        if (removidos.includes(id)) return;
-        const existentes = map[key].alumnos || [];
-        if (!existentes.includes(id))
-          map[key] = { ...map[key], alumnos: [...existentes, id] };
-      });
-    } else {
-      if (!map[key] || grupo.ids.length > (map[key].alumnos || []).length) {
-        map[key] = {
-          canchaId: 'cancha3', fecha, horario: grupo.horario,
-          alumnos: grupo.ids, tipo: 'membresia', disciplina: grupo.disciplina,
-        };
-      }
-    }
-  });
-
   return map;
 }
 
@@ -309,11 +273,16 @@ const ASIST_BTN = [
   { key: 'cambio_turno', label: 'Canceló',  on: 'bg-amber-500 text-white' },
 ];
 
+const DIAS_REPETIR = [
+  { key: 1, label: 'L' }, { key: 2, label: 'M' }, { key: 3, label: 'X' },
+  { key: 4, label: 'J' }, { key: 5, label: 'V' }, { key: 6, label: 'S' }, { key: 0, label: 'D' },
+];
+
 const EditModal = ({
-  canchaId, fecha, horario, slot,
+  canchaId, fecha, anio, horario, slot,
   alumnos, alumnosMap, asistencias,
   profesores, profeId,
-  onClose, onAgregar, onRemover, onCrearSlot, onRegistrarAsistencia, onAsignarProfe,
+  onClose, onAgregar, onRemover, onCrearSlot, onRegistrarAsistencia, onAsignarProfe, onRepetirTurno,
   syncing,
 }) => {
   const [search, setSearch] = useState('');
@@ -328,6 +297,43 @@ const EditModal = ({
   const clave = `${fecha}|${horario}`;
   const cancelados = ids.filter(id => asistencias?.[id]?.[clave] === 'cambio_turno').length;
   const efectivos  = ids.length - cancelados;
+
+  // ── Repetir turno ──────────────────────────────────────────────────────────
+  const diaActual = (() => {
+    const [dd, mm] = fecha.split('/').map(Number);
+    return new Date(anio, mm - 1, dd).getDay();
+  })();
+  const [repetirAbierto, setRepetirAbierto] = useState(false);
+  const [repetirDias, setRepetirDias] = useState(() => new Set([diaActual]));
+  const [repetirModo, setRepetirModo] = useState('mes'); // 'mes' | 'semanas'
+  const [repetirSemanas, setRepetirSemanas] = useState(4);
+  const [repetirResultado, setRepetirResultado] = useState(null);
+  const [repetirLoading, setRepetirLoading] = useState(false);
+
+  const toggleDiaRepetir = (d) => setRepetirDias(prev => {
+    const next = new Set(prev);
+    next.has(d) ? next.delete(d) : next.add(d);
+    return next;
+  });
+
+  const repetirValido = repetirDias.size > 0 && !!profeId;
+
+  const confirmarRepetir = async () => {
+    if (!repetirValido) return;
+    setRepetirLoading(true);
+    try {
+      const res = await onRepetirTurno(
+        canchaId, horario, fecha,
+        Array.from(repetirDias),
+        repetirModo === 'semanas' ? { modo: 'semanas', semanas: repetirSemanas } : { modo: 'mes' },
+        tipo, disciplina, ids, profeId,
+      );
+      setRepetirResultado(res);
+      if (res?.success) setRepetirAbierto(false);
+    } finally {
+      setRepetirLoading(false);
+    }
+  };
 
   const disponibles = alumnos.filter(a =>
     !ids.includes(a.id) &&
@@ -398,9 +404,9 @@ const EditModal = ({
             </div>
 
             {ids.length === 0 ? (
-              <div className="text-center py-10 text-slate-300">
-                <Icon name="person_add" size={36} className="mx-auto mb-2" />
-                <p className="text-sm font-medium">Sin alumnos asignados</p>
+              <div className="flex items-center justify-center gap-2 py-3 text-slate-300">
+                <Icon name="person_add" size={18} />
+                <p className="text-xs font-medium">Sin alumnos asignados</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -593,6 +599,93 @@ const EditModal = ({
               </select>
             </section>
           )}
+
+          {/* Repetir turno */}
+          <section>
+            <button
+              onClick={() => setRepetirAbierto(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <Icon name="event_repeat" size={18} className="text-primary" />
+                Repetir este turno
+              </span>
+              <Icon name={repetirAbierto ? 'expand_less' : 'expand_more'} size={18} className="text-slate-400" />
+            </button>
+
+            {repetirAbierto && (
+              <div className="mt-2 p-4 bg-slate-50 rounded-2xl space-y-4">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Días de la semana</p>
+                  <div className="flex gap-1.5">
+                    {DIAS_REPETIR.map(d => (
+                      <button
+                        key={d.key}
+                        onClick={() => toggleDiaRepetir(d.key)}
+                        className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${
+                          repetirDias.has(d.key) ? 'bg-primary text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Duración</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setRepetirModo('mes')}
+                      className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
+                        repetirModo === 'mes' ? 'bg-primary text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      Hasta fin de mes
+                    </button>
+                    <button
+                      onClick={() => setRepetirModo('semanas')}
+                      className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
+                        repetirModo === 'semanas' ? 'bg-primary text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      Por semanas
+                    </button>
+                  </div>
+                  {repetirModo === 'semanas' && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="number" min={1} max={52}
+                        value={repetirSemanas}
+                        onChange={e => setRepetirSemanas(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-20 px-3 py-2 bg-white rounded-xl text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <span className="text-xs text-slate-500 font-medium">semana{repetirSemanas !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                </div>
+
+                {!profeId && (
+                  <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
+                    <Icon name="info" size={14} />
+                    {profesores?.length > 0 ? 'Asigná un profesor arriba para poder repetir.' : 'Agregá un profesor en la sección Profesores para poder repetir.'}
+                  </p>
+                )}
+
+                <button
+                  onClick={confirmarRepetir}
+                  disabled={repetirLoading || syncing || !repetirValido}
+                  className="w-full py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-50 transition-colors"
+                >
+                  {repetirLoading ? '...' : ids.length > 0 ? `Repetir con ${ids.length} alumno${ids.length !== 1 ? 's' : ''}` : 'Repetir turno vacío'}
+                </button>
+
+                {repetirResultado && !repetirResultado.success && (
+                  <p className="text-xs text-error font-medium">No se pudo repetir el turno. Intentá de nuevo.</p>
+                )}
+              </div>
+            )}
+          </section>
         </div>
 
         {/* ── Footer ── */}
@@ -636,6 +729,7 @@ const GrillaCancha = ({
   onCrearSlot,
   onRegistrarAsistencia,
   onAsignarProfe,
+  onRepetirTurno,
   syncing,
   vistaMode,
   setVistaMode,
@@ -676,8 +770,8 @@ const GrillaCancha = ({
   const alumnosIdSet = useMemo(() => new Set(alumnos.map(a => a.id)), [alumnos]);
 
   const slotsDia = useMemo(
-    () => computeSlots(fechaSeleccionada, ocupacion, alumnos, alumnosIdSet, anio),
-    [ocupacion, fechaSeleccionada, alumnos, alumnosIdSet, anio]
+    () => computeSlots(fechaSeleccionada, ocupacion, alumnos, alumnosIdSet),
+    [ocupacion, fechaSeleccionada, alumnos, alumnosIdSet]
   );
 
   // Lun-Vie de la semana activa
@@ -696,9 +790,9 @@ const GrillaCancha = ({
     return Object.fromEntries(
       diasLaborales
         .filter(d => d.enMes)
-        .map(({ fecha }) => [fecha, computeSlots(fecha, ocupacion, alumnos, alumnosIdSet, anio)])
+        .map(({ fecha }) => [fecha, computeSlots(fecha, ocupacion, alumnos, alumnosIdSet)])
     );
-  }, [vistaMode, diasLaborales, ocupacion, alumnos, alumnosIdSet, anio]);
+  }, [vistaMode, diasLaborales, ocupacion, alumnos, alumnosIdSet]);
 
   const horariosVisibles = useMemo(() => {
     if (turno === 'manana') return HORARIOS_MANANA;
@@ -995,6 +1089,7 @@ const GrillaCancha = ({
         <EditModal
           canchaId={modalSlot.canchaId}
           fecha={modalFecha}
+          anio={anio}
           horario={modalSlot.horario}
           slot={slotModal}
           alumnos={alumnos}
@@ -1014,6 +1109,7 @@ const GrillaCancha = ({
           }}
           onRegistrarAsistencia={onRegistrarAsistencia}
           onAsignarProfe={onAsignarProfe}
+          onRepetirTurno={onRepetirTurno}
           syncing={syncing}
         />
       )}

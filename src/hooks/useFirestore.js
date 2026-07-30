@@ -100,15 +100,18 @@ export const useFirestore = () => {
      */
     setClaseProfesorId:    wrap(fs.setClaseProfesorId),
     /**
-     * Llena cupos del mes para un alumno con membresía.
-     * @param {string}   alumnoId
-     * @param {number[]} diasElegidos
+     * Repite un turno en los días de la semana indicados, hasta fin de mes
+     * o durante N semanas.
+     * @param {string}   canchaId
      * @param {string}   horario
-     * @param {number}   mes
-     * @param {number}   anio
-     * @param {string}   [disciplina]
+     * @param {number[]} diasSemana
+     * @param {string}   fechaInicio
+     * @param {number}   mesInicio
+     * @param {number}   anioInicio
+     * @param {{modo: 'mes'|'semanas', semanas?: number}} duracion
+     * @param {{disciplina: string, tipo: string, alumnoIds: string[]}} datos
      */
-    llenarCuposMembresia:  wrap(fs.llenarCuposMembresia),
+    repetirTurno:  wrap(fs.repetirTurno),
 
     // ── Cambios de Turno ──────────────────────────────────────────────────
     getCambiosTurno:   wrap(fs.getCambiosTurno),

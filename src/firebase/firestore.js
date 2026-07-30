@@ -41,23 +41,6 @@ const MESES = [
 const snapToArray = (snapshot) =>
   snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-/**
- * Genera todas las fechas "dd/mm" del mes que caen en los días de la semana
- * indicados en `diasElegidos` (array de números: 0=Dom … 6=Sáb).
- */
-function getFechasDelMes(diasElegidos, mes, anio) {
-  const fechas = [];
-  const ultimo = new Date(anio, mes, 0).getDate();
-  for (let d = 1; d <= ultimo; d++) {
-    const fecha = new Date(anio, mes - 1, d);
-    if (diasElegidos.includes(fecha.getDay())) {
-      const dia = String(d).padStart(2, '0');
-      const mesStr = String(mes).padStart(2, '0');
-      fechas.push(`${dia}/${mesStr}`);
-    }
-  }
-  return fechas;
-}
 
 /** ID de clase: "{canchaId}-{fecha_}-{horario}" (ej: "cancha3-15_04-18:00")
  *  La fecha usa _ en vez de / porque Firestore trata / como separador de ruta. */
@@ -278,34 +261,54 @@ export async function setClaseProfesorId(canchaId, fecha, horario, profesorId, m
 }
 
 /**
- * Llena los cupos de membresía para un alumno en un mes completo.
- * Para cada fecha del mes que coincida con `diasElegidos`, agrega al alumno
- * en la clase correspondiente de cancha3 (sin estado de asistencia).
+ * Repite un turno (mismo tipo, disciplina, profesor y alumnos si los hay) en
+ * los días de la semana indicados, a partir de una fecha de inicio y hasta
+ * fin del mes de inicio o durante N semanas. Los alumnos son opcionales
+ * (se puede repetir un turno vacío, ej. para reservar un horario con profesor).
  *
- * @param {string}   alumnoId
- * @param {number[]} diasElegidos — ej: [1, 3] para Lunes y Miércoles
- * @param {string}   horario      — ej: "18:00"
- * @param {number}   mes          — 1-12
- * @param {number}   anio
- * @param {string}   [disciplina]
+ * @param {string}   canchaId
+ * @param {string}   horario     — ej: "18:00"
+ * @param {number[]} diasSemana  — ej: [1, 3] para Lunes y Miércoles (0=Dom…6=Sáb)
+ * @param {string}   fechaInicio — "dd/mm" de la primera fecha a considerar
+ * @param {number}   mesInicio   — 1-12
+ * @param {number}   anioInicio
+ * @param {{modo: 'mes'|'semanas', semanas?: number}} duracion
+ * @param {{disciplina: string, tipo: string, alumnoIds?: string[], profesorId?: string}} datos
  * @returns {string[]} fechas generadas en formato "dd/mm"
  */
-export async function llenarCuposMembresia(
-  alumnoId,
-  diasElegidos,
+export async function repetirTurno(
+  canchaId,
   horario,
-  mes,
-  anio,
-  disciplina = '',
+  diasSemana,
+  fechaInicio,
+  mesInicio,
+  anioInicio,
+  duracion,
+  { disciplina, tipo, alumnoIds, profesorId },
 ) {
-  const fechas = getFechasDelMes(diasElegidos, mes, anio);
+  const [ddIni, mmIni] = fechaInicio.split('/').map(Number);
+  const inicio = new Date(anioInicio, mmIni - 1, ddIni);
+  const fin = duracion.modo === 'semanas'
+    ? new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + duracion.semanas * 7 - 1)
+    : new Date(anioInicio, mesInicio, 0);
+
+  const fechas = [];
+  const cursor = new Date(inicio);
+  while (cursor <= fin) {
+    if (diasSemana.includes(cursor.getDay())) {
+      const dia = String(cursor.getDate()).padStart(2, '0');
+      const mesStr = String(cursor.getMonth() + 1).padStart(2, '0');
+      fechas.push({
+        fecha: `${dia}/${mesStr}`,
+        mes: `${MESES[cursor.getMonth()]} ${cursor.getFullYear()}`,
+      });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
   if (fechas.length === 0) return [];
 
-  const mesLabel = `${MESES[mes - 1]} ${anio}`;
-  const canchaId = 'cancha3';
-
   await Promise.all(
-    fechas.map((fecha) => {
+    fechas.map(({ fecha, mes }) => {
       const ref = doc(db, 'clases', claseId(canchaId, fecha, horario));
       return setDoc(
         ref,
@@ -313,10 +316,11 @@ export async function llenarCuposMembresia(
           canchaId,
           fecha,
           horario,
-          mes: mesLabel,
+          mes,
           disciplina,
-          alumnos: arrayUnion(alumnoId),
-          tipo: 'membresia',
+          tipo,
+          ...(alumnoIds?.length ? { alumnos: arrayUnion(...alumnoIds) } : {}),
+          ...(profesorId ? { profesorId } : {}),
           creadoEn: serverTimestamp(),
         },
         { merge: true },
@@ -324,7 +328,7 @@ export async function llenarCuposMembresia(
     })
   );
 
-  return fechas;
+  return fechas.map(f => f.fecha);
 }
 
 // ─── ASISTENCIAS (subcol de clases) ──────────────────────────────────────────

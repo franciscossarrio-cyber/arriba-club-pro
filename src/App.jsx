@@ -92,7 +92,7 @@ function App() {
     setClaseProfesorId,
     addProfesor,
     deleteProfesor,
-    llenarCuposMembresia,
+    repetirTurno,
     agregarAlumnoAClase,
     removerAlumnoDeClase,
     setClase,
@@ -673,19 +673,6 @@ function App() {
         disciplina: disciplinaActiva,
       });
 
-      // Auto-llenar cupos en cancha3 si el alumno tiene días elegidos
-      if (alumno.diasElegidos?.length > 0 && alumno.horario) {
-        const { mesNum: mNum, anio: mAnio } = parseMesActual(mes);
-        await llenarCuposMembresia(
-          alumno.id,
-          alumno.diasElegidos,
-          alumno.horario,
-          mNum,
-          mAnio,
-          disciplinaActiva,
-        ).catch(() => {}); // no bloquear el pago si falla
-      }
-
       await cargarDatos(true);
       return { success: true, mensaje: `✓ ${alumno.nombre} - ${formatMonto(monto)}` };
     } catch (err) {
@@ -818,9 +805,6 @@ function App() {
         metodo,
         disciplina: disciplinaActiva,
       });
-      if (alumno.diasElegidos?.length > 0 && alumno.horario) {
-        await llenarCuposMembresia(alumno.id, alumno.diasElegidos, alumno.horario, mesNum, anio, disciplinaActiva).catch(() => {});
-      }
       await cargarDatos(true);
       return { success: true };
     } catch (err) {
@@ -983,26 +967,19 @@ function App() {
       ?? 0;
   };
 
-  // Llena los cupos del mes para TODOS los alumnos activos con diasElegidos
-  const handleLlenarMes = async () => {
-    const activos = alumnosDisciplina.filter(
-      a => a.estado === 'Activo' && a.diasElegidos?.length > 0 && a.horario
-    );
-    if (activos.length === 0) {
-      setError('Ningún alumno tiene días asignados aún');
-      return;
-    }
+  // Repite un turno (mismos alumnos, tipo y disciplina) en los días de la
+  // semana elegidos, hasta fin de mes o durante N semanas.
+  const handleRepetirTurno = async (canchaId, horario, fechaInicio, diasSemana, duracion, tipo, disciplina, alumnoIds, profesorId) => {
     setSyncing(true);
     try {
-      await Promise.all(
-        activos.map(a =>
-          llenarCuposMembresia(a.id, a.diasElegidos, a.horario, mesNum, anio, disciplinaActiva)
-        )
-      );
+      await repetirTurno(canchaId, horario, diasSemana, fechaInicio, mesNum, anio, duracion, {
+        disciplina, tipo, alumnoIds, profesorId,
+      });
       await cargarDatos(true);
+      return { success: true };
     } catch (err) {
-      console.error('Error llenarMes:', err);
-      setError(err?.message || 'Error al llenar mes');
+      setError(err?.message || 'Error al repetir el turno');
+      return { success: false };
     } finally {
       setSyncing(false);
     }
@@ -1516,6 +1493,7 @@ function App() {
               onCrearSlot={handleCrearSlot}
               onRegistrarAsistencia={handleRegistrarAsistencia}
               onAsignarProfe={handleAsignarProfeSlot}
+              onRepetirTurno={handleRepetirTurno}
               syncing={syncing}
               vistaMode={vistaGrilla}
               setVistaMode={setVistaGrilla}
