@@ -317,16 +317,24 @@ const EditModal = ({
   // ── Eliminar turno ────────────────────────────────────────────────────────
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
   const [eliminarLoading, setEliminarLoading] = useState(false);
+  const [eliminarError, setEliminarError] = useState(false);
 
   const eliminarTurno = async (todaLaSerie) => {
     setEliminarLoading(true);
+    setEliminarError(false);
     try {
-      if (todaLaSerie) await onEliminarSerie(serieId);
-      else await onEliminarTurno(canchaId, fecha, horario);
-      onClose();
+      const res = todaLaSerie ? await onEliminarSerie(serieId) : await onEliminarTurno(canchaId, fecha, horario);
+      if (res?.success) {
+        onClose();
+      } else {
+        setEliminarError(true);
+        setConfirmarEliminar(false);
+      }
+    } catch {
+      setEliminarError(true);
+      setConfirmarEliminar(false);
     } finally {
       setEliminarLoading(false);
-      setConfirmarEliminar(false);
     }
   };
   // Para turnos nuevos, el tipo (Clásica/Privada/Day Use) hay que confirmarlo
@@ -803,6 +811,12 @@ const EditModal = ({
           {/* Eliminar turno */}
           {slot && (
             <section>
+              {eliminarError && (
+                <p className="text-xs text-error font-medium mb-2 flex items-center gap-1">
+                  <Icon name="error" size={14} />
+                  No se pudo eliminar. Probá de nuevo.
+                </p>
+              )}
               {!confirmarEliminar ? (
                 <button
                   onClick={() => setConfirmarEliminar(true)}
