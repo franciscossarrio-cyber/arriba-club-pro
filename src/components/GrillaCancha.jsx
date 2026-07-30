@@ -1096,7 +1096,7 @@ const GrillaCancha = ({
           alumnosMap={alumnosMap}
           asistencias={asistencias}
           profesores={profesores}
-          profeId={clasesPorProfe?.[`${slotModal?.disciplina || 'Futvoley'}-${modalFecha}-${modalSlot.horario}`] || null}
+          profeId={clasesPorProfe?.[`${modalSlot.canchaId}|${modalFecha}|${modalSlot.horario}`] || null}
           onClose={closeModal}
           onAgregar={async (...a) => { await onAgregar(...a); }}
           onRemover={async (...a) => { await onRemover(...a); }}

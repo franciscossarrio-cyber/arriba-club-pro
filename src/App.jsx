@@ -179,12 +179,16 @@ function App() {
         storage.set('profesores', profesData);
       }
 
-      // Construir clasesPorProfe desde los documentos de clases (campo profesorId)
+      // Construir clasesPorProfe desde los documentos de clases (campo profesorId).
+      // Se guardan dos claves: una por disciplina (Profesores.jsx, vista simple)
+      // y otra por cancha exacta (GrillaCancha.jsx, evita que se "filtre" el
+      // profesor de una cancha a otra cuando comparten disciplina/fecha/horario).
       const clasesObj = clasesData.reduce((acc, c) => {
-        if (c.profesorId && c.disciplina && c.fecha && c.horario) {
-          return { ...acc, [`${c.disciplina}-${c.fecha}-${c.horario}`]: c.profesorId };
-        }
-        return acc;
+        if (!c.profesorId || !c.fecha || !c.horario) return acc;
+        const next = { ...acc };
+        if (c.disciplina) next[`${c.disciplina}-${c.fecha}-${c.horario}`] = c.profesorId;
+        if (c.canchaId) next[`${c.canchaId}|${c.fecha}|${c.horario}`] = c.profesorId;
+        return next;
       }, {});
       if (Object.keys(clasesObj).length > 0) {
         setClasesPorProfe(clasesObj);
@@ -413,8 +417,11 @@ function App() {
 
   // Asignar profesor desde la grilla de canchas (conoce canchaId y disciplina exactos)
   const handleAsignarProfeSlot = async (canchaId, fecha, horario, disciplina, profeId) => {
-    const key = `${disciplina}-${fecha}-${horario}`;
-    setClasesPorProfe(prev => ({ ...prev, [key]: profeId || undefined }));
+    setClasesPorProfe(prev => ({
+      ...prev,
+      [`${disciplina}-${fecha}-${horario}`]: profeId || undefined,
+      [`${canchaId}|${fecha}|${horario}`]: profeId || undefined,
+    }));
     try {
       await setClaseProfesorId(canchaId, fecha, horario, profeId || null, mesActual);
     } catch (err) {
