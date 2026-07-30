@@ -900,6 +900,7 @@ const GrillaCancha = ({
   onActualizarSerie,
   onEliminarTurno,
   onEliminarSerie,
+  onCargarMes,
   syncing,
   vistaMode,
   setVistaMode,
@@ -914,6 +915,18 @@ const GrillaCancha = ({
   const [fechaSeleccionada, setFechaSeleccionada] = useState(defaultFecha);
   const [turno, setTurno] = useState('tarde'); // 'manana' | 'tarde' | 'todos'
   const [modalSlot, setModalSlot] = useState(null); // { canchaId, horario, fecha }
+  const [confirmarCargarMes, setConfirmarCargarMes] = useState(false);
+  const [cargarMesLoading, setCargarMesLoading] = useState(false);
+
+  const cargarMes = async () => {
+    setCargarMesLoading(true);
+    try {
+      await onCargarMes();
+    } finally {
+      setCargarMesLoading(false);
+      setConfirmarCargarMes(false);
+    }
+  };
 
   // Navega una semana hacia adelante/atrás; si cae en otro mes, cambia de mes.
   const irSemana = (offset) => {
@@ -1001,6 +1014,15 @@ const GrillaCancha = ({
           <p className="text-on-surface-variant text-xs">{mesActual}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setConfirmarCargarMes(true)}
+            disabled={syncing || cargarMesLoading}
+            title="Genera los turnos del mes para los alumnos de membresía mensual, agrupados por día/horario"
+            className="flex items-center gap-1.5 text-[11px] font-black text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Icon name="calendar_add_on" size={14} />
+            Cargar mes
+          </button>
           {!esDiaHoy && (
             <button
               onClick={() => {
@@ -1294,6 +1316,32 @@ const GrillaCancha = ({
           onEliminarSerie={onEliminarSerie}
           syncing={syncing}
         />
+      )}
+
+      {/* Confirmar Cargar mes */}
+      {confirmarCargarMes && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => !cargarMesLoading && setConfirmarCargarMes(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 mb-1">¿Cargar el mes?</h3>
+              <p className="text-sm text-slate-500">
+                Genera los turnos de {mesActual} para todos los alumnos activos de membresía mensual de {disciplinaActiva || 'esta disciplina'}, agrupados por día y horario. Cancha 1 por default; si se supera el cupo, el excedente pasa a otra cancha.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setConfirmarCargarMes(false)}
+                disabled={cargarMesLoading}
+                className="py-3 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition-colors"
+              >Cancelar</button>
+              <button
+                onClick={cargarMes}
+                disabled={cargarMesLoading}
+                className="py-3 rounded-xl text-sm font-bold bg-primary text-white disabled:opacity-50 transition-colors"
+              >{cargarMesLoading ? '...' : 'Cargar mes'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

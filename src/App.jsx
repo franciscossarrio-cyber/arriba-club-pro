@@ -1097,6 +1097,78 @@ function App() {
     }
   };
 
+  // Genera los turnos del mes para todos los alumnos de membresía mensual de
+  // la disciplina activa, agrupados por día/horario elegido. Cancha 1 por
+  // default; si un grupo supera el cupo (8), el excedente pasa a otra cancha
+  // libre (Cancha 2, luego Cancha 3). Futvoley se asigna a Fernando Matos por
+  // default; el resto de las disciplinas quedan sin profesor para asignar a mano.
+  const handleCargarMes = async () => {
+    setSyncing(true);
+    try {
+      const activos = alumnosDisciplina.filter(a =>
+        estabaActivoEnMes(a, mesNum, anio) &&
+        (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual') &&
+        a.diasElegidos?.length > 0 && Object.keys(a.horariosPorDia || {}).length > 0
+      );
+      if (activos.length === 0) {
+        setError('Ningún alumno activo tiene días y horarios asignados');
+        return { success: false };
+      }
+
+      // Agrupar alumnoIds por día de la semana + horario
+      const grupos = {};
+      activos.forEach(a => {
+        a.diasElegidos.forEach(dia => {
+          const horario = a.horariosPorDia?.[dia];
+          if (!horario) return;
+          const key = `${dia}|${horario}`;
+          (grupos[key] ||= []).push(a.id);
+        });
+      });
+
+      const ordenCanchas = disciplinaActiva === 'Funcional'
+        ? ['gimnasio']
+        : ['cancha1', 'cancha2', 'cancha3'];
+      const profesorDefault = disciplinaActiva === 'Futvoley'
+        ? profesores.find(p => p.nombre === 'Fernando Matos')?.id
+        : null;
+      const fechaInicio = `01/${String(mesNum).padStart(2, '0')}`;
+
+      const trabajos = [];
+      let sinCupo = 0;
+      Object.entries(grupos).forEach(([key, alumnoIds]) => {
+        const [diaStr, horario] = key.split('|');
+        const dia = Number(diaStr);
+        const chunks = [];
+        for (let i = 0; i < alumnoIds.length; i += 8) chunks.push(alumnoIds.slice(i, i + 8));
+        chunks.forEach((chunk, i) => {
+          const canchaId = ordenCanchas[i];
+          if (!canchaId) { sinCupo += chunk.length; return; }
+          trabajos.push(
+            repetirTurno(canchaId, horario, [dia], fechaInicio, mesNum, anio, { modo: 'mes' }, {
+              disciplina: disciplinaActiva,
+              tipo: 'clasica',
+              alumnoIds: chunk,
+              profesorId: profesorDefault || undefined,
+            })
+          );
+        });
+      });
+
+      await Promise.all(trabajos);
+      await cargarDatos(true);
+      if (sinCupo > 0) {
+        setError(`Se cargó el mes, pero ${sinCupo} alumno${sinCupo !== 1 ? 's' : ''} quedaron sin cancha disponible (cupo excedido).`);
+      }
+      return { success: true, sinCupo };
+    } catch (err) {
+      setError(err?.message || 'Error al cargar el mes');
+      return { success: false };
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // Aplica tipo/disciplina/profesor a TODAS las clases de una serie repetida
   // (no toca los alumnos de cada clase individual).
   const handleActualizarSerie = async (serieId, data) => {
@@ -1659,6 +1731,7 @@ function App() {
               onActualizarSerie={handleActualizarSerie}
               onEliminarTurno={handleEliminarTurno}
               onEliminarSerie={handleEliminarSerie}
+              onCargarMes={handleCargarMes}
               syncing={syncing}
               vistaMode={vistaGrilla}
               setVistaMode={setVistaGrilla}
