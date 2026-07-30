@@ -151,8 +151,8 @@ function App() {
       setAlumnos(alumnosData.map(a => ({
         ...a,
         disciplinas: a.disciplinas || ['Futvoley'],
-        horario: a.horario || '18:00',
         diasElegidos: a.diasElegidos || [],
+        horariosPorDia: a.horariosPorDia || {},
       })));
 
       setPagos(pagosData);
@@ -341,7 +341,9 @@ function App() {
   const alumnosFiltrados = alumnosDisciplina.filter(a => {
     const matchBusqueda = a.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
       a.telefono?.includes(busqueda);
-    const matchHorario = horarioFiltro === 'todos' || a.horario === horarioFiltro;
+    const matchHorario = horarioFiltro === 'todos' ||
+      Object.values(a.horariosPorDia || {}).includes(horarioFiltro) ||
+      a.horario === horarioFiltro;
     const matchMembresia = membresiaFiltro === 'todos' || a.tipoMembresia === membresiaFiltro;
     const matchPlan = planFiltro === 'todos' || a.plan === planFiltro;
     return matchBusqueda && matchHorario && matchMembresia && matchPlan;
@@ -1381,18 +1383,19 @@ function App() {
     // 2. Slots virtuales: alumnos con membresía mensual y diasElegidos
     const todasLasFechas = getFechasMes(mesNum, anio);
     alumnos
-      .filter(a => estabaActivoEnMes(a, mesNum, anio) && a.diasElegidos?.length > 0 && a.horario && (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual'))
+      .filter(a => estabaActivoEnMes(a, mesNum, anio) && a.diasElegidos?.length > 0 && Object.keys(a.horariosPorDia || {}).length > 0 && (!a.tipoMembresia || a.tipoMembresia === 'Membresía mensual'))
       .forEach(alumno => {
         todasLasFechas.forEach(fecha => {
           const [d, m] = fecha.split('/').map(Number);
           const diaSemana = new Date(anio, m - 1, d).getDay();
-          if (!alumno.diasElegidos.includes(diaSemana)) return;
+          const horarioDia = alumno.horariosPorDia?.[diaSemana];
+          if (!alumno.diasElegidos.includes(diaSemana) || !horarioDia) return;
           (alumno.disciplinas || ['Futvoley']).forEach(disc => {
-            const key = `cancha3|${fecha}|${alumno.horario}|${alumno.id}`;
+            const key = `cancha3|${fecha}|${horarioDia}|${alumno.id}`;
             if (incluidos.has(key)) return;
             incluidos.add(key);
-            const asist = asistencias[alumno.id]?.[`${fecha}|${alumno.horario}`] || '';
-            rows.push(['cancha3', fecha, alumno.horario, disc, 'clasica', alumno.nombre, asist]);
+            const asist = asistencias[alumno.id]?.[`${fecha}|${horarioDia}`] || '';
+            rows.push(['cancha3', fecha, horarioDia, disc, 'clasica', alumno.nombre, asist]);
           });
         });
       });

@@ -15,8 +15,8 @@ const DISCIPLINAS_FORM = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional
 
 const ALUMNO_VACIO = {
   nombre: '', apodo: '', telefono: '', instagram: '', fechaNacimiento: '',
-  plan: 'Arena Basic', frecuencia: '2x sem', horario: '18:00',
-  diasElegidos: [], disciplinas: [], tipoMembresia: '', referidoPor: '', estado: 'Activo',
+  plan: 'Arena Basic', frecuencia: '2x sem',
+  diasElegidos: [], horariosPorDia: {}, disciplinas: [], tipoMembresia: '', referidoPor: '', estado: 'Activo',
 };
 
 const COLS = [
@@ -67,7 +67,10 @@ const Alumnos = ({
       fechaNacimiento: alumno.fechaNacimiento || '',
       tipoMembresia: alumno.tipoMembresia || '',
       plan: alumno.plan || 'Arena Basic', frecuencia: alumno.frecuencia || '2x sem',
-      horario: alumno.horario || '18:00', diasElegidos: alumno.diasElegidos || [],
+      diasElegidos: alumno.diasElegidos || [],
+      horariosPorDia: alumno.horariosPorDia || (alumno.horario && alumno.diasElegidos?.length
+        ? Object.fromEntries(alumno.diasElegidos.map(d => [d, alumno.horario]))
+        : {}),
       disciplinas: alumno.disciplinas || [], referidoPor: alumno.referidoPor || '',
       estado: alumno.estado || 'Activo',
     });
@@ -82,7 +85,15 @@ const Alumnos = ({
     if (errors[key]) setErrors(p => ({ ...p, [key]: undefined }));
   };
 
-  const toggleDia       = (num)  => setForm(p => ({ ...p, diasElegidos: p.diasElegidos.includes(num)  ? p.diasElegidos.filter(d => d !== num)  : [...p.diasElegidos, num]  }));
+  const toggleDia = (num) => setForm(p => {
+    const yaElegido = p.diasElegidos.includes(num);
+    const diasElegidos = yaElegido ? p.diasElegidos.filter(d => d !== num) : [...p.diasElegidos, num];
+    const horariosPorDia = { ...p.horariosPorDia };
+    if (yaElegido) delete horariosPorDia[num];
+    else horariosPorDia[num] = HORARIOS[1] || HORARIOS[0];
+    return { ...p, diasElegidos, horariosPorDia };
+  });
+  const setHorarioDia = (num, horario) => setForm(p => ({ ...p, horariosPorDia: { ...p.horariosPorDia, [num]: horario } }));
   const toggleDisciplina = (disc) => {
     setForm(p => ({ ...p, disciplinas: p.disciplinas.includes(disc) ? p.disciplinas.filter(d => d !== disc) : [...p.disciplinas, disc] }));
     if (errors.disciplinas) setErrors(p => ({ ...p, disciplinas: undefined }));
@@ -253,7 +264,13 @@ const Alumnos = ({
 
                       {/* Horario */}
                       <td className="px-4 py-3 text-on-surface whitespace-nowrap font-mono text-xs">
-                        {alumno.horario || <span className="text-slate-300">—</span>}
+                        {alumno.horariosPorDia && Object.keys(alumno.horariosPorDia).length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {DIAS.filter(d => alumno.horariosPorDia[d.num]).map(d => (
+                              <span key={d.num}>{d.nombre} {alumno.horariosPorDia[d.num]}</span>
+                            ))}
+                          </div>
+                        ) : alumno.horario || <span className="text-slate-300">—</span>}
                       </td>
 
                       {/* Días */}
@@ -508,30 +525,30 @@ const Alumnos = ({
 
               {/* Sección: Horario */}
               <section className="space-y-3">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Horario</p>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Horario de clase</label>
-                  <select value={form.horario} onChange={e => setField('horario', e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl text-sm bg-slate-50 border-2 border-transparent focus:border-primary focus:outline-none transition-all">
-                    {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Días que asiste</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {DIAS.map(d => (
-                      <button key={d.num} type="button" onClick={() => toggleDia(d.num)}
-                        className={`px-3 py-2 rounded-xl text-sm font-bold transition-all border-2 ${
-                          form.diasElegidos.includes(d.num)
-                            ? 'bg-primary/10 border-primary/30 text-primary'
-                            : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
-                        }`}>
-                        {d.nombre}
-                      </button>
-                    ))}
-                  </div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Días y horarios</p>
+                <div className="space-y-2">
+                  {DIAS.map(d => {
+                    const activo = form.diasElegidos.includes(d.num);
+                    return (
+                      <div key={d.num} className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleDia(d.num)}
+                          className={`w-16 shrink-0 px-3 py-2.5 rounded-xl text-sm font-bold transition-all border-2 ${
+                            activo
+                              ? 'bg-primary/10 border-primary/30 text-primary'
+                              : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
+                          }`}>
+                          {d.nombre}
+                        </button>
+                        {activo && (
+                          <select value={form.horariosPorDia[d.num] || HORARIOS[0]}
+                            onChange={e => setHorarioDia(d.num, e.target.value)}
+                            className="flex-1 px-4 py-2.5 rounded-xl text-sm bg-slate-50 border-2 border-transparent focus:border-primary focus:outline-none transition-all">
+                            {HORARIOS.map(h => <option key={h} value={h}>{h}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
 

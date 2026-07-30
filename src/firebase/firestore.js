@@ -72,6 +72,7 @@ export async function addAlumno(data) {
     ...data,
     disciplinas: data.disciplinas || [],
     diasElegidos: data.diasElegidos || [],
+    horariosPorDia: data.horariosPorDia || {},
     apodos: data.apodos || [],
     estado: data.estado || 'Activo',
     creadoEn: serverTimestamp(),

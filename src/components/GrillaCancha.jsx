@@ -596,7 +596,6 @@ const EditModal = ({
                           </div>
                           <div className="text-right flex-shrink-0">
                             {a.plan && <p className="text-[11px] text-slate-400">{a.plan}</p>}
-                            {a.horario && <p className="text-[11px] text-slate-400">{a.horario}</p>}
                           </div>
                         </button>
                       ))}
@@ -1076,7 +1075,7 @@ const GrillaCancha = ({
               const tieneDatos = enMes && (ocupacion.some(s => s.fecha === fecha) || (() => {
                 const [dd2, mm2] = fecha.split('/').map(Number);
                 const dow2 = new Date(anio, mm2 - 1, dd2).getDay();
-                return alumnos.some(a => a.estado === 'Activo' && a.diasElegidos?.includes(dow2) && a.horario);
+                return alumnos.some(a => a.estado === 'Activo' && a.diasElegidos?.includes(dow2) && a.horariosPorDia?.[dow2]);
               })());
 
               return (
