@@ -356,7 +356,7 @@ const EditModal = ({
     return next;
   });
 
-  const repetirValido = repetirDias.size > 0 && !!profeId;
+  const repetirValido = repetirDias.size > 0 && (tipo === 'dayuse' || !!profeId);
 
   const confirmarRepetir = async () => {
     if (!repetirValido) return;
@@ -537,7 +537,7 @@ const EditModal = ({
                     ))}
                   </div>
                 </div>
-              ) : profesores?.length > 0 && !profeId ? (
+              ) : tipo !== 'dayuse' && profesores?.length > 0 && !profeId ? (
                 <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl space-y-2.5">
                   <p className="text-xs font-semibold text-amber-700">Asigná un profesor antes de agregar alumnos:</p>
                   <select
@@ -778,7 +778,7 @@ const EditModal = ({
                   )}
                 </div>
 
-                {!profeId && (
+                {tipo !== 'dayuse' && !profeId && (
                   <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
                     <Icon name="info" size={14} />
                     {profesores?.length > 0 ? 'Asigná un profesor arriba para poder repetir.' : 'Agregá un profesor en la sección Profesores para poder repetir.'}
