@@ -29,12 +29,18 @@ import {
   getFechasMes,
   parseMesActual,
   estabaActivoEnMes,
+  configVigenteEnMes,
+  rangoMeses,
   getClasesDelMes,
   formatMonto,
   buscarAlumno,
   downloadCSV,
   storage
 } from './utils/helpers';
+
+// Mes en que el club salió a producción: desde acá la deuda de membresía se
+// acumula mes a mes si no se paga. Antes de este mes no se acumula nada.
+const CUTOVER_MES = 'Julio 2026';
 
 function App() {
   // Guard para evitar deudas duplicadas en clicks rápidos concurrentes
@@ -51,6 +57,9 @@ function App() {
   // Data
   const [alumnos, setAlumnos] = useState([]);
   const [pagos, setPagos] = useState([]);
+  const [pagosTodos, setPagosTodos] = useState([]); // historial completo, para calcular deuda acumulada mes a mes
+  const [configsHistoricos, setConfigsHistoricos] = useState([]);
+  const [cfgGlobalState, setCfgGlobalState] = useState(null);
   const [asistencias, setAsistencias] = useState({});   // { alumnoId: { 'dd/mm|HH:mm': estado } }
   const [ocupacion, setOcupacion] = useState([]);        // docs de la colección 'clases'
   const [profesores, setProfesores] = useState(() => storage.get('profesores') || []);
@@ -125,9 +134,10 @@ function App() {
   const cargarDatos = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [alumnosData, pagosData, asistData, clasesData, profesData, cfgGlobal, todasConfigMes] = await Promise.all([
+      const [alumnosData, pagosData, pagosTodosData, asistData, clasesData, profesData, cfgGlobal, todasConfigMes] = await Promise.all([
         getAlumnos(),
         getPagos(mesActual),
+        getPagos(null).catch(() => []), // historial completo, para deuda acumulada mes a mes
         getAsistencias(mesActual).catch(() => []),
         getClasesMes(mesActual).catch(() => []),
         getProfesores().catch(() => []),
@@ -135,14 +145,8 @@ function App() {
         getTodasConfigMes().catch(() => []),
       ]);
       // Un cambio de precio en un mes "hereda" hacia los meses siguientes (no
-      // tiene su propio config todavía) pero no toca los meses anteriores:
-      // se mergean en orden cronológico todas las config mensuales hasta
-      // (e incluyendo) el mes actual, sobre la base del config global.
-      const configData = todasConfigMes
-        .map(c => ({ ...c, ...parseMesActual(c.mes) }))
-        .filter(c => c.anio < anio || (c.anio === anio && c.mesNum <= mesNum))
-        .sort((a, b) => (a.anio - b.anio) || (a.mesNum - b.mesNum))
-        .reduce((acc, c) => ({ ...acc, ...c }), { ...(cfgGlobal || {}) });
+      // tiene su propio config todavía) pero no toca los meses anteriores.
+      const configData = configVigenteEnMes(todasConfigMes, cfgGlobal, mesNum, anio);
 
       setAlumnos(alumnosData.map(a => ({
         ...a,
@@ -152,6 +156,9 @@ function App() {
       })));
 
       setPagos(pagosData);
+      setPagosTodos(pagosTodosData);
+      setConfigsHistoricos(todasConfigMes);
+      setCfgGlobalState(cfgGlobal);
 
       // Asistencias → { alumnoId: { 'dd/mm|HH:mm': estado } }
       const asistPorAlumno = {};
@@ -225,20 +232,47 @@ function App() {
   );
 
   const alumnosActivos = alumnosDisciplina.filter(a => estabaActivoEnMes(a, mesNum, anio));
-  // Suma de abonos (pagos parciales o totales) de membresía por alumno, para soportar pagos parciales
-  const pagadoMembresiaPorAlumno = {};
-  pagosDisciplina
-    .filter(p => p.estado === 'Pagado' && !['suelta', 'privada', 'prueba', 'dayuse'].includes(p.tipo))
+
+  // La deuda de membresía se acumula mes a mes (si no pagaste, el mes
+  // siguiente arrastra lo que quedó pendiente) — pero solo a partir de
+  // CUTOVER_MES, que es cuando el club salió a producción. Antes de eso se
+  // evalúa únicamente el mes en curso, como siempre.
+  const cutover = parseMesActual(CUTOVER_MES);
+  const enPeriodoAcumulado = anio > cutover.anio || (anio === cutover.anio && mesNum >= cutover.mesNum);
+  const mesesAEvaluar = enPeriodoAcumulado
+    ? rangoMeses(cutover.mesNum, cutover.anio, mesNum, anio)
+    : [{ mesNum, anio, label: mesActual }];
+
+  const pagadoPorAlumnoYMes = {};
+  pagosTodos
+    .filter(p =>
+      (p.disciplina === disciplinaActiva || (!p.disciplina && disciplinaActiva === 'Futvoley')) &&
+      p.estado === 'Pagado' && !['suelta', 'privada', 'prueba', 'dayuse'].includes(p.tipo)
+    )
     .forEach(p => {
-      pagadoMembresiaPorAlumno[p.alumnoId] = (pagadoMembresiaPorAlumno[p.alumnoId] || 0) + (parseInt(p.monto) || 0);
+      const key = `${p.alumnoId}|${p.mes}`;
+      pagadoPorAlumnoYMes[key] = (pagadoPorAlumnoYMes[key] || 0) + (parseInt(p.monto) || 0);
     });
+
   // Solo alumnos con membresía mensual (o sin tipoMembresia definido, para compatibilidad)
   const pagosPendientes = alumnosActivos
     .filter(a => !a.tipoMembresia || a.tipoMembresia === 'Membresía mensual')
     .map(a => {
-      const total = precios[disciplinaActiva]?.[a.plan]?.[a.frecuencia] || PRECIOS_DEFAULT['Futvoley']?.[a.plan]?.[a.frecuencia] || 0;
-      const pagado = pagadoMembresiaPorAlumno[a.id] || 0;
-      return { ...a, _montoPendienteMembresia: Math.max(0, total - pagado) };
+      let totalAdeudado = 0;
+      const deudaPorMes = [];
+      const alta = a.creadoEn?.toDate?.() || null;
+      mesesAEvaluar.forEach(({ mesNum: mN, anio: aN, label }) => {
+        if (!estabaActivoEnMes(a, mN, aN)) return;
+        // No cobrar meses anteriores a que el alumno existiera en el sistema
+        if (alta && (aN < alta.getFullYear() || (aN === alta.getFullYear() && mN < alta.getMonth() + 1))) return;
+        const cfgMes = configVigenteEnMes(configsHistoricos, cfgGlobalState, mN, aN);
+        const preciosMes = cfgMes.precios?.[disciplinaActiva] || PRECIOS_DEFAULT['Futvoley'];
+        const totalMes = preciosMes?.[a.plan]?.[a.frecuencia] || 0;
+        const pagadoMes = pagadoPorAlumnoYMes[`${a.id}|${label}`] || 0;
+        const debeMes = Math.max(0, totalMes - pagadoMes);
+        if (debeMes > 0) { totalAdeudado += debeMes; deudaPorMes.push({ mes: label, monto: debeMes }); }
+      });
+      return { ...a, _montoPendienteMembresia: totalAdeudado, _deudaPorMes: deudaPorMes };
     })
     .filter(a => a._montoPendienteMembresia > 0);
   const preciosDisciplina = precios[disciplinaActiva] || PRECIOS_DEFAULT['Futvoley'];
@@ -819,20 +853,40 @@ function App() {
   };
 
   const handlePagarMembresia = async (alumno, metodo, montoOverride) => {
-    const montoBase = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
-    const montoQR = preciosQR[disciplinaActiva]?.[alumno.plan]?.[alumno.frecuencia] || Math.round(montoBase * 1.25);
-    const monto = montoOverride != null ? montoOverride : (metodo === 'Transferencia' ? montoQR : montoBase);
     setSyncing(true);
     try {
-      await addPago({
-        alumnoId: alumno.id,
-        nombre: alumno.nombre,
-        mes: mesActual,
-        monto,
-        estado: 'Pagado',
-        metodo,
-        disciplina: disciplinaActiva,
-      });
+      // Deuda de varios meses acumulados: se reparte el pago entre los meses
+      // más viejos primero, un registro de pago por cada mes cubierto.
+      if (alumno._deudaPorMes?.length > 1) {
+        let restante = montoOverride != null ? montoOverride : alumno._deudaPorMes.reduce((s, d) => s + d.monto, 0);
+        for (const { mes: mesDeuda, monto: montoDeuda } of alumno._deudaPorMes) {
+          if (restante <= 0) break;
+          const aplicar = Math.min(restante, montoDeuda);
+          await addPago({
+            alumnoId: alumno.id,
+            nombre: alumno.nombre,
+            mes: mesDeuda,
+            monto: aplicar,
+            estado: 'Pagado',
+            metodo,
+            disciplina: disciplinaActiva,
+          });
+          restante -= aplicar;
+        }
+      } else {
+        const montoBase = preciosDisciplina[alumno.plan]?.[alumno.frecuencia] || 0;
+        const montoQR = preciosQR[disciplinaActiva]?.[alumno.plan]?.[alumno.frecuencia] || Math.round(montoBase * 1.25);
+        const monto = montoOverride != null ? montoOverride : (metodo === 'Transferencia' ? montoQR : montoBase);
+        await addPago({
+          alumnoId: alumno.id,
+          nombre: alumno.nombre,
+          mes: alumno._deudaPorMes?.[0]?.mes || mesActual,
+          monto,
+          estado: 'Pagado',
+          metodo,
+          disciplina: disciplinaActiva,
+        });
+      }
       await cargarDatos(true);
       return { success: true };
     } catch (err) {

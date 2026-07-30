@@ -85,6 +85,30 @@ export const parseMesActual = (mesActual) => {
   };
 };
 
+// Devuelve el config (precios, preciosTipos, etc.) vigente para un mes/año
+// dado: hereda el último cambio guardado en ese mes o antes (nunca uno
+// posterior), sobre la base del config global.
+export const configVigenteEnMes = (configsHistoricos, cfgGlobal, mesNum, anio) => {
+  return (configsHistoricos || [])
+    .map(c => ({ ...c, ...parseMesActual(c.mes) }))
+    .filter(c => c.anio < anio || (c.anio === anio && c.mesNum <= mesNum))
+    .sort((a, b) => (a.anio - b.anio) || (a.mesNum - b.mesNum))
+    .reduce((acc, c) => ({ ...acc, ...c }), { ...(cfgGlobal || {}) });
+};
+
+// Genera la lista de meses (mesNum, anio, label "Mes Año") entre un inicio y
+// un fin, ambos inclusive.
+export const rangoMeses = (mesNumIni, anioIni, mesNumFin, anioFin) => {
+  const meses = [];
+  let m = mesNumIni, a = anioIni;
+  while (a < anioFin || (a === anioFin && m <= mesNumFin)) {
+    meses.push({ mesNum: m, anio: a, label: `${MESES[m - 1]} ${a}` });
+    m++;
+    if (m > 12) { m = 1; a++; }
+  }
+  return meses;
+};
+
 // Determina si un alumno debe contarse como activo para un mes/año dado.
 // Un alumno actualmente Inactivo sigue contando como activo en los meses
 // anteriores al mes de su baja (fechaBaja "dd/mm/yyyy"), para no reescribir

@@ -364,16 +364,19 @@ const Pagos = ({
 
   // Lista unificada de deudas (membresías + sueltas/privadas/prueba/dayuse)
   const itemsPendientes = useMemo(() => {
-    const mem = memFiltradas.map(a => ({
-      id: a.id, kind: 'membresia', tipo: 'membresia', alumno: a,
-      nombre: a.nombre,
-      sub: `${a.plan} • ${a.frecuencia}`,
-      subColor: 'text-on-surface-variant',
-      monto: a._montoPendienteMembresia ?? (preciosDisciplina[a.plan]?.[a.frecuencia] || 0),
-      colLabel: 'Membresía', colValue: mesActual,
-      whatsappHref: a.telefono ? getWhatsAppLink(a, mesActual, preciosDisciplina) : null,
-      cancelable: false,
-    }));
+    const mem = memFiltradas.map(a => {
+      const nMeses = a._deudaPorMes?.length || 1;
+      return {
+        id: a.id, kind: 'membresia', tipo: 'membresia', alumno: a,
+        nombre: a.nombre,
+        sub: nMeses > 1 ? `${a.plan} • ${a.frecuencia} · ${nMeses} meses adeudados` : `${a.plan} • ${a.frecuencia}`,
+        subColor: nMeses > 1 ? 'text-error' : 'text-on-surface-variant',
+        monto: a._montoPendienteMembresia ?? (preciosDisciplina[a.plan]?.[a.frecuencia] || 0),
+        colLabel: 'Membresía', colValue: mesActual,
+        whatsappHref: a.telefono ? getWhatsAppLink(a, mesActual, preciosDisciplina) : null,
+        cancelable: false,
+      };
+    });
     const tipoSuelta = TIPOS_PAGO.find(t => t.id === 'suelta');
     const sueltasPuras = sueltasFiltradas.filter(p => p.tipo === 'suelta' && !p.esExtra);
     const otras = sueltasFiltradas.filter(p => !(p.tipo === 'suelta' && !p.esExtra));
