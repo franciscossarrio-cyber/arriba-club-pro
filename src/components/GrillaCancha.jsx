@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import Icon from './Icon';
-import { DISCIPLINAS, DISC_COLORS } from '../utils/helpers';
+import { DISCIPLINAS, DISC_COLORS, MESES } from '../utils/helpers';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -82,16 +82,16 @@ function semanaDelMes(fecha, mesNum, anio) {
   return dias;
 }
 
-function offsetSemana(fecha, offset, mesNum, anio) {
+// Avanza/retrocede una semana desde `fecha`. No clampea al mes actual: si la
+// semana cae en otro mes (o año), lo indica para que el caller cambie de mes.
+function offsetSemana(fecha, offset, anio) {
   const [dd, mm] = fecha.split('/').map(Number);
   const d = new Date(anio, mm - 1, dd + offset * 7);
-  if (d.getMonth() + 1 < mesNum || d.getFullYear() < anio)
-    return `01/${String(mesNum).padStart(2,'0')}`;
-  if (d.getMonth() + 1 > mesNum || d.getFullYear() > anio) {
-    const ultimo = new Date(anio, mesNum, 0).getDate();
-    return `${String(ultimo).padStart(2,'0')}/${String(mesNum).padStart(2,'0')}`;
-  }
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  return {
+    fecha: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+    mesNum: d.getMonth() + 1,
+    anio: d.getFullYear(),
+  };
 }
 
 // ─── Helper: computa slots de un día (solo lo guardado en Firestore) ─────────
@@ -814,7 +814,7 @@ const EditModal = ({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 const GrillaCancha = ({
-  mesActual, mesNum, anio,
+  mesActual, mesNum, anio, onCambiarMes,
   ocupacion,
   alumnos,
   asistencias,
@@ -841,6 +841,15 @@ const GrillaCancha = ({
   const [fechaSeleccionada, setFechaSeleccionada] = useState(defaultFecha);
   const [turno, setTurno] = useState('tarde'); // 'manana' | 'tarde' | 'todos'
   const [modalSlot, setModalSlot] = useState(null); // { canchaId, horario, fecha }
+
+  // Navega una semana hacia adelante/atrás; si cae en otro mes, cambia de mes.
+  const irSemana = (offset) => {
+    const destino = offsetSemana(fechaSeleccionada, offset, anio);
+    if (destino.mesNum !== mesNum || destino.anio !== anio) {
+      onCambiarMes(`${MESES[destino.mesNum - 1]} ${destino.anio}`);
+    }
+    setFechaSeleccionada(destino.fecha);
+  };
 
   const alumnosMap = useMemo(
     () => Object.fromEntries(alumnos.map(a => [a.id, a])),
@@ -973,7 +982,7 @@ const GrillaCancha = ({
       <div className="bg-surface-container-lowest rounded-2xl px-3 py-1.5">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setFechaSeleccionada(f => offsetSemana(f, -1, mesNum, anio))}
+            onClick={() => irSemana(-1)}
             className="p-1.5 rounded-xl hover:bg-surface-container transition-colors shrink-0"
           >
             <Icon name="chevron_left" size={18} />
@@ -1024,7 +1033,7 @@ const GrillaCancha = ({
           </div>
 
           <button
-            onClick={() => setFechaSeleccionada(f => offsetSemana(f, 1, mesNum, anio))}
+            onClick={() => irSemana(1)}
             className="p-1.5 rounded-xl hover:bg-surface-container transition-colors shrink-0"
           >
             <Icon name="chevron_right" size={18} />
