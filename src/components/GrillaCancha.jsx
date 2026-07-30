@@ -885,7 +885,7 @@ const EditModal = ({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 const GrillaCancha = ({
-  mesActual, mesNum, anio, onCambiarMes,
+  mesActual, mesNum, anio, disciplinaActiva, onCambiarMes,
   ocupacion,
   alumnos,
   asistencias,

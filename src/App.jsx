@@ -1716,6 +1716,7 @@ function App() {
               mesActual={mesActual}
               mesNum={mesNum}
               anio={anio}
+              disciplinaActiva={disciplinaActiva}
               onCambiarMes={setMesActual}
               ocupacion={ocupacion}
               alumnos={alumnos}
