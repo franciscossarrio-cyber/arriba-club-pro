@@ -1115,7 +1115,7 @@ function App() {
   const handleEliminarTurno = async (canchaId, fecha, horario) => {
     setSyncing(true);
     try {
-      await eliminarClase(canchaId, fecha, horario);
+      await eliminarClase(canchaId, fecha, horario, anio);
       await cargarDatos(true);
       return { success: true };
     } catch (err) {

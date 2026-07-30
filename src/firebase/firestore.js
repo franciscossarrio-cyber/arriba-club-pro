@@ -363,16 +363,39 @@ export async function actualizarSerie(serieId, data) {
 /**
  * Elimina una clase completa (todos sus alumnos y su asistencia registrada)
  * de una cancha/fecha/horario, sin necesidad de sacar alumnos uno por uno.
+ * También cancela las deudas Pendientes (suelta/privada/day use) de los
+ * alumnos que iban a asistir a esa clase — si el turno se borra, no
+ * corresponde seguir cobrándoles algo a lo que ya no van a ir.
+ * @param {number} [anio] — si no se pasa, se infiere del campo `mes` de la clase.
  */
-export async function eliminarClase(canchaId, fecha, horario) {
+export async function eliminarClase(canchaId, fecha, horario, anio) {
   const cId = claseId(canchaId, fecha, horario);
+  const claseSnap = await getDoc(doc(db, 'clases', cId));
+  const claseData = claseSnap.exists() ? claseSnap.data() : null;
+  const alumnoIds = claseData?.alumnos || [];
+  const anioReal = anio || (claseData?.mes ? parseInt(claseData.mes.split(' ')[1], 10) : null);
+
+  if (alumnoIds.length > 0 && anioReal) {
+    const fechaCompleta = `${fecha}/${anioReal}`;
+    const pagosSnap = await getDocs(query(collection(db, 'pagos'), where('horario', '==', horario)));
+    await Promise.all(
+      pagosSnap.docs
+        .filter(d => {
+          const p = d.data();
+          return p.estado === 'Pendiente' && p.fecha === fechaCompleta && alumnoIds.includes(p.alumnoId);
+        })
+        .map(d => deleteDoc(d.ref))
+    );
+  }
+
   const asistSnap = await getDocs(collection(db, 'clases', cId, 'asistencias'));
   await Promise.all(asistSnap.docs.map(d => deleteDoc(d.ref)));
   await deleteDoc(doc(db, 'clases', cId));
 }
 
 /**
- * Elimina TODAS las clases de una serie repetida (`serieId`).
+ * Elimina TODAS las clases de una serie repetida (`serieId`), cancelando
+ * también las deudas pendientes de los alumnos en cada una.
  * @returns {number} cantidad de clases eliminadas
  */
 export async function eliminarSerie(serieId) {
