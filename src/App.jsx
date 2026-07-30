@@ -1102,6 +1102,8 @@ function App() {
   // default; si un grupo supera el cupo (8), el excedente pasa a otra cancha
   // libre (Cancha 2, luego Cancha 3). Futvoley se asigna a Fernando Matos por
   // default; el resto de las disciplinas quedan sin profesor para asignar a mano.
+  const NOMBRES_DIA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
   const handleCargarMes = async () => {
     setSyncing(true);
     try {
@@ -1111,7 +1113,7 @@ function App() {
         a.diasElegidos?.length > 0 && Object.keys(a.horariosPorDia || {}).length > 0
       );
       if (activos.length === 0) {
-        setError('Ningún alumno activo tiene días y horarios asignados');
+        setError(`Ningún alumno activo de ${disciplinaActiva} tiene días y horarios asignados (revisados: ${alumnosDisciplina.length} alumnos de la disciplina)`);
         return { success: false };
       }
 
@@ -1135,6 +1137,7 @@ function App() {
       const fechaInicio = `01/${String(mesNum).padStart(2, '0')}`;
 
       const trabajos = [];
+      const resumen = [];
       let sinCupo = 0;
       Object.entries(grupos).forEach(([key, alumnoIds]) => {
         const [diaStr, horario] = key.split('|');
@@ -1144,6 +1147,7 @@ function App() {
         chunks.forEach((chunk, i) => {
           const canchaId = ordenCanchas[i];
           if (!canchaId) { sinCupo += chunk.length; return; }
+          resumen.push(`${NOMBRES_DIA[dia]} ${horario} → ${canchaId} (${chunk.length})`);
           trabajos.push(
             repetirTurno(canchaId, horario, [dia], fechaInicio, mesNum, anio, { modo: 'mes' }, {
               disciplina: disciplinaActiva,
@@ -1157,9 +1161,8 @@ function App() {
 
       await Promise.all(trabajos);
       await cargarDatos(true);
-      if (sinCupo > 0) {
-        setError(`Se cargó el mes, pero ${sinCupo} alumno${sinCupo !== 1 ? 's' : ''} quedaron sin cancha disponible (cupo excedido).`);
-      }
+      const avisoSinCupo = sinCupo > 0 ? ` ⚠ ${sinCupo} alumno${sinCupo !== 1 ? 's' : ''} sin cancha disponible.` : '';
+      setError(`Cargar mes: ${activos.length} alumnos, ${resumen.length} turno${resumen.length !== 1 ? 's' : ''} → ${resumen.join(' · ') || 'ninguno'}.${avisoSinCupo}`);
       return { success: true, sinCupo };
     } catch (err) {
       setError(err?.message || 'Error al cargar el mes');
