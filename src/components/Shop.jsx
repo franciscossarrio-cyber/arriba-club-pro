@@ -53,6 +53,7 @@ const Shop = () => {
   const [items,        setItems]        = useState([]);
   const [cobrando,     setCobrando]     = useState(false);
   const [fechaFactura, setFechaFactura] = useState(hoy);
+  const [metodoPago,   setMetodoPago]   = useState('Efectivo');
 
   // Producto form
   const [showForm,      setShowForm]    = useState(false);
@@ -166,12 +167,14 @@ const Shop = () => {
         neto:        totales.neto,
         ivaTotal:    totales.ivaTotal,
         total:       totales.total,
+        metodo:      metodoPago,
         arcaPayload: buildArcaPayload(totales, snapshot, arcaForm.ptoVta, fechaFactura),
         estado:      'borrador',
       };
       const id = await addFactura(factura);
       setItems([]);
       setFechaFactura(hoy());
+      setMetodoPago('Efectivo');
 
       const res = await fnEmitirFactura({ facturaId: id });
       const { cae, caeFchVto, nroComprobante } = res.data;
@@ -300,6 +303,11 @@ const Shop = () => {
   // ── Totales del carrito activo ─────────────────────────────────────────────
   const { neto, ivaTotal, total } = calcTotales();
 
+  // ── Totales cobrados por método (para control de caja) ─────────────────────
+  const facturasCobradas   = facturas.filter(f => f.tipo !== 'nota_credito' && f.estado === 'enviada');
+  const montoEfectivoShop  = facturasCobradas.filter(f => (f.metodo || 'Efectivo') === 'Efectivo').reduce((s, f) => s + f.total, 0);
+  const montoTransferShop  = facturasCobradas.filter(f => f.metodo === 'Transferencia').reduce((s, f) => s + f.total, 0);
+
   // ──────────────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -419,6 +427,18 @@ const Shop = () => {
                       className="flex-1 px-3 py-1.5 bg-surface-container border-2 border-transparent rounded-xl focus:border-primary outline-none text-sm"
                     />
                   </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-on-surface-variant whitespace-nowrap">Cobro</label>
+                    <div className="flex-1 flex bg-surface-container rounded-xl p-1 gap-1">
+                      {['Efectivo', 'Transferencia'].map(m => (
+                        <button key={m} type="button" onClick={() => setMetodoPago(m)}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                            metodoPago === m ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >{m === 'Transferencia' ? 'Transf. / QR' : m}</button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => setItems([])}
                       className="p-3 rounded-xl border-2 border-outline/20 hover:bg-surface-container transition-colors"
@@ -491,7 +511,24 @@ const Shop = () => {
 
       {/* ── TAB: HISTORIAL ──────────────────────────────────────────────────── */}
       {tab === 'historial' && (
-        <div className="space-y-2">
+        <div className="space-y-4">
+          {facturasCobradas.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm flex gap-6">
+              <div className="flex-1">
+                <span className="flex items-center gap-1.5 text-xs text-on-surface-variant mb-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Efectivo
+                </span>
+                <p className="font-black text-lg text-on-surface">{formatMonto(montoEfectivoShop)}</p>
+              </div>
+              <div className="flex-1">
+                <span className="flex items-center gap-1.5 text-xs text-on-surface-variant mb-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Transf. / QR
+                </span>
+                <p className="font-black text-lg text-on-surface">{formatMonto(montoTransferShop)}</p>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
           {facturas.length === 0 && (
             <div className="text-center py-16 text-on-surface-variant">
               <Icon name="history" size={48} className="opacity-20 mb-3" />
@@ -514,6 +551,13 @@ const Shop = () => {
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${ESTADO_COLOR[f.estado] ?? ESTADO_COLOR.borrador}`}>
                       {ESTADO_LABEL[f.estado] ?? f.estado}
                     </span>
+                    {f.tipo !== 'nota_credito' && (
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+                        (f.metodo || 'Efectivo') === 'Transferencia' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {(f.metodo || 'Efectivo') === 'Transferencia' ? 'Transf. / QR' : 'Efectivo'}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-on-surface-variant mt-0.5">
                     {f.fecha}
@@ -553,6 +597,7 @@ const Shop = () => {
               )}
             </div>
           ))}
+          </div>
         </div>
       )}
 

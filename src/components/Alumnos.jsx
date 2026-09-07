@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import Icon from './Icon';
-import { HORARIOS, TIPOS_MEMBRESIA } from '../utils/helpers';
+import { HORARIOS, TIPOS_MEMBRESIA, DISCIPLINAS } from '../utils/helpers';
 
 const DIAS = [
   { nombre: 'Lun', num: 1 },
@@ -10,8 +10,6 @@ const DIAS = [
   { nombre: 'Vie', num: 5 },
   { nombre: 'Sáb', num: 6 },
 ];
-
-const DISCIPLINAS_FORM = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional', 'Gimnasio'];
 
 const ALUMNO_VACIO = {
   nombre: '', apodo: '', telefono: '', instagram: '', fechaNacimiento: '',
@@ -515,7 +513,7 @@ const Alumnos = ({
                   <div className={`flex flex-wrap gap-2 p-3 rounded-xl border-2 transition-all ${
                     errors.disciplinas ? 'border-red-400 bg-red-50' : 'border-transparent bg-slate-50'
                   }`}>
-                    {DISCIPLINAS_FORM.map(disc => (
+                    {DISCIPLINAS.map(disc => (
                       <button key={disc} type="button" onClick={() => toggleDisciplina(disc)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-2 ${
                           form.disciplinas.includes(disc)

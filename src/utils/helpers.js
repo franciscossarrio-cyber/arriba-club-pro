@@ -1,21 +1,37 @@
 // Configuración
-export const DISCIPLINAS = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional'];
+export const DISCIPLINAS = ['Futvoley', 'Beach Tennis', 'Beach Volley', 'Funcional', 'Altinha', 'Performance Paddle', 'Performance Futbol', 'Kinesiología'];
+
+// Disciplinas que se dictan en el gimnasio (no ocupan cancha1/2/3, usan la
+// columna virtual "gimnasio" en la grilla y en "Cargar mes").
+export const DISCIPLINAS_GIMNASIO = ['Funcional', 'Performance Paddle', 'Performance Futbol', 'Kinesiología'];
+
+// Disciplinas sin límite de cupo por slot (por ahora, mientras se define su
+// dinámica de grupos).
+export const DISCIPLINAS_SIN_CUPO = ['Altinha'];
 
 const _DC = { bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', ring: 'ring-primary' };
 export const DISC_COLORS = {
-  'Futvoley':     _DC,
-  'Beach Tennis': _DC,
-  'Beach Volley': _DC,
-  'Funcional':    _DC,
+  'Futvoley':            _DC,
+  'Beach Tennis':        _DC,
+  'Beach Volley':        _DC,
+  'Funcional':           _DC,
+  'Altinha':             _DC,
+  'Performance Paddle':  _DC,
+  'Performance Futbol':  _DC,
+  'Kinesiología':        _DC,
 };
 export const HORARIOS = ['17:00', '18:00', '19:00', '20:00', '21:00'];
 export const TIPOS_MEMBRESIA = ['Membresía mensual', 'Clases privadas', 'Clases sueltas', 'Clase de prueba', 'Day Use'];
 export const PRECIOS_TIPOS_DEFAULT = {
-  'Futvoley':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
-  'Beach Tennis': { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
-  'Beach Volley': { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
-  'Funcional':    { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
-  'Gimnasio':     { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Futvoley':            { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Beach Tennis':        { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Beach Volley':        { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Funcional':           { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Gimnasio':            { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Altinha':             { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Performance Paddle':  { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Performance Futbol':  { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
+  'Kinesiología':        { 'Membresía mensual': 0, 'Clases privadas': 0, 'Clases sueltas': 0, 'Clase de prueba': 0, 'Day Use': 0 },
 };
 
 // Precios QR de membresías por disciplina/plan/frecuencia (configurables por mes)
@@ -24,6 +40,7 @@ export const PRECIOS_QR_DEFAULT = {
   'Beach Tennis': { 'Arena Basic': { '1x sem': 84000, '2x sem': 162400 }, 'Arena Plus': { '1x sem': 117600, '2x sem': 235200 }, 'Arena Premium': { '1x sem': 147000, '2x sem': 296800 } },
   'Beach Volley': { 'Arena Basic': { '1x sem': 70000, '2x sem': 134000 }, 'Arena Plus': { '1x sem': 98000,  '2x sem': 209000 }, 'Arena Premium': { '1x sem': 129000, '2x sem': 246000 } },
   'Funcional':    { 'Arena Basic': { '1x sem': 70000, '2x sem': 134000 }, 'Arena Plus': { '1x sem': 98000,  '2x sem': 209000 }, 'Arena Premium': { '1x sem': 129000, '2x sem': 246000 } },
+  'Altinha':      { 'Arena Basic': { '1x sem': 0, '2x sem': 0 }, 'Arena Plus': { '1x sem': 0, '2x sem': 0 }, 'Arena Premium': { '1x sem': 0, '2x sem': 0 } },
 };
 
 // Precios de clases privadas/semi-privadas por disciplina y número de personas
@@ -31,11 +48,15 @@ export const PRECIOS_QR_DEFAULT = {
 const _BT_PRIV = { privada_1p: { Efectivo: 56000, Transferencia: 70000 }, privada_2p: { Efectivo: 36400, Transferencia: 45500 }, privada_3p: { Efectivo: 26320, Transferencia: 32900 }, privada_4p: { Efectivo: 20720, Transferencia: 25900 } };
 const _FV_PRIV = { privada_1p: { Efectivo: 50000, Transferencia: 62500 }, privada_2p: { Efectivo: 30000, Transferencia: 37500 }, privada_3p: { Efectivo: 25000, Transferencia: 31250 }, privada_4p: { Efectivo: 25000, Transferencia: 31250 } };
 export const PRECIOS_PRIVADAS_DEFAULT = {
-  'Futvoley':     _FV_PRIV,
-  'Beach Tennis': _BT_PRIV,
-  'Beach Volley': _FV_PRIV,
-  'Funcional':    _FV_PRIV,
-  'Gimnasio':     _FV_PRIV,
+  'Futvoley':            _FV_PRIV,
+  'Beach Tennis':        _BT_PRIV,
+  'Beach Volley':        _FV_PRIV,
+  'Funcional':           _FV_PRIV,
+  'Gimnasio':            _FV_PRIV,
+  'Altinha':             _FV_PRIV,
+  'Performance Paddle':  _FV_PRIV,
+  'Performance Futbol':  _FV_PRIV,
+  'Kinesiología':        _FV_PRIV,
 };
 export const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -44,6 +65,7 @@ export const PRECIOS_DEFAULT = {
   'Beach Tennis': { 'Arena Basic': { '1x sem': 50000, '2x sem': 95000 }, 'Arena Plus': { '1x sem': 70000, '2x sem': 140000 }, 'Arena Premium': { '1x sem': 85000, '2x sem': 175000 } },
   'Beach Volley': { 'Arena Basic': { '1x sem': 50000, '2x sem': 95000 }, 'Arena Plus': { '1x sem': 70000, '2x sem': 140000 }, 'Arena Premium': { '1x sem': 85000, '2x sem': 175000 } },
   'Funcional': { 'Arena Basic': { '1x sem': 50000, '2x sem': 95000 }, 'Arena Plus': { '1x sem': 70000, '2x sem': 140000 }, 'Arena Premium': { '1x sem': 85000, '2x sem': 175000 } },
+  'Altinha':   { 'Arena Basic': { '1x sem': 0, '2x sem': 0 }, 'Arena Plus': { '1x sem': 0, '2x sem': 0 }, 'Arena Premium': { '1x sem': 0, '2x sem': 0 } },
 };
 
 // Obtener mes actual formateado

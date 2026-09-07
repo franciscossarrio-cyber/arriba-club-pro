@@ -105,11 +105,82 @@ const Funcional = ({ size }) => (
   </svg>
 );
 
+const Altinha = ({ size }) => (
+  /* Pelota chica de altinha — gajos de colores alternados, estilo playa */
+  <svg width={size} height={size} viewBox="0 0 40 40">
+    <defs>
+      <clipPath id="al-c"><circle cx="20" cy="20" r="17"/></clipPath>
+      <radialGradient id="al-g" cx="38%" cy="32%" r="65%">
+        <stop offset="0%"   stopColor="#ffffff"/>
+        <stop offset="100%" stopColor="#e6e6e6"/>
+      </radialGradient>
+    </defs>
+    <circle cx="21" cy="21.5" r="16.5" fill="rgba(0,0,0,0.2)"/>
+    <circle cx="20" cy="20" r="17" fill="url(#al-g)"/>
+    <g clipPath="url(#al-c)">
+      <path d="M20,3  A17,17 0 0,1 20,37 Z" fill="#ef4444"/>
+      <path d="M3,20  A17,17 0 0,1 20,3  L20,20 Z" fill="#22c55e"/>
+      <path d="M3,20  A17,17 0 0,0 20,37 L20,20 Z" fill="#3b82f6"/>
+    </g>
+    <circle cx="20" cy="20" r="17" fill="none" stroke="#c9c9c9" strokeWidth="1.2"/>
+    <ellipse cx="13" cy="12" rx="5" ry="3" fill="white" opacity="0.35" transform="rotate(-35 13 12)"/>
+  </svg>
+);
+
+const PerformancePaddle = ({ size }) => (
+  /* Pala de pádel — cara maciza perforada, distinta de la raqueta de tenis */
+  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+    <rect x="8" y="4" width="24" height="27" rx="12" fill="#0ea5a5"/>
+    <rect x="8" y="4" width="24" height="27" rx="12" fill="none" stroke="#0b7f7f" strokeWidth="1.2"/>
+    {Array.from({ length: 4 }).map((_, row) =>
+      Array.from({ length: 3 }).map((_, col) => (
+        <circle key={`${row}-${col}`} cx={15 + col * 5} cy={11 + row * 5} r="1.4" fill="#e7fbfb" opacity="0.85" />
+      ))
+    )}
+    <rect x="18" y="29" width="4" height="9" rx="2" fill="#0b7f7f"/>
+    <rect x="18" y="32" width="4" height="2" fill="#075e5e" rx="1"/>
+  </svg>
+);
+
+const PerformanceFutbol = ({ size }) => (
+  /* Pelota de fútbol clásica — pentágonos negros sobre base blanca */
+  <svg width={size} height={size} viewBox="0 0 40 40">
+    <defs>
+      <clipPath id="pf-c"><circle cx="20" cy="20" r="17"/></clipPath>
+    </defs>
+    <circle cx="21" cy="21.5" r="16.5" fill="rgba(0,0,0,0.2)"/>
+    <circle cx="20" cy="20" r="17" fill="#f5f5f5"/>
+    <g clipPath="url(#pf-c)" fill="#1a1a1a">
+      <polygon points="20,10 25,13.5 23.2,19.5 16.8,19.5 15,13.5"/>
+      <polygon points="6,16 11,14 13,19 9,23.5 4,21.5"/>
+      <polygon points="34,16 29,14 27,19 31,23.5 36,21.5"/>
+      <polygon points="12,32 10,26.5 15,23 21,26 19,31.5"/>
+      <polygon points="28,32 30,26.5 25,23 19,26 21,31.5"/>
+    </g>
+    <circle cx="20" cy="20" r="17" fill="none" stroke="#c9c9c9" strokeWidth="1.2"/>
+    <ellipse cx="13" cy="12" rx="5" ry="3" fill="white" opacity="0.4" transform="rotate(-35 13 12)"/>
+  </svg>
+);
+
+const Kinesiologia = ({ size }) => (
+  /* Cruz médica + pulso — kinesiología / recuperación física */
+  <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+    <circle cx="20" cy="20" r="17" fill="#ecfdf5"/>
+    <circle cx="20" cy="20" r="17" fill="none" stroke="#10b981" strokeWidth="1.2"/>
+    <path d="M8,21 L14,21 L16.5,15 L20,27 L23,19 L25,21 L32,21"
+      stroke="#059669" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
 const ICONS = {
-  'Futvoley':     Futvoley,
-  'Beach Tennis': BeachTennis,
-  'Beach Volley': BeachVolley,
-  'Funcional':    Funcional,
+  'Futvoley':            Futvoley,
+  'Beach Tennis':        BeachTennis,
+  'Beach Volley':        BeachVolley,
+  'Funcional':           Funcional,
+  'Altinha':             Altinha,
+  'Performance Paddle':  PerformancePaddle,
+  'Performance Futbol':  PerformanceFutbol,
+  'Kinesiología':        Kinesiologia,
 };
 
 const DisciplinaIcon = ({ disciplina, size = 32 }) => {

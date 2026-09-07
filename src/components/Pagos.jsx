@@ -504,6 +504,13 @@ const Pagos = ({
   const totalEsperado = montoCobrado + montoPendiente;
   const pct = totalEsperado > 0 ? Math.round((montoCobrado / totalEsperado) * 100) : 0;
 
+  const montoEfectivo = pagosPagados
+    .filter(p => (p.metodo || 'Efectivo') === 'Efectivo')
+    .reduce((sum, p) => sum + (parseInt(p.monto) || 0), 0);
+  const montoTransferencia = pagosPagados
+    .filter(p => p.metodo === 'Transferencia')
+    .reduce((sum, p) => sum + (parseInt(p.monto) || 0), 0);
+
   return (
     <div className="space-y-6">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -591,6 +598,22 @@ const Pagos = ({
             <div className="relative flex items-center justify-center">
               <CircleProgress pct={pct} />
               <span className="absolute text-xs font-bold text-indigo-600">{pct}%</span>
+            </div>
+          </div>
+          <div className="pt-3 border-t border-surface-container-high space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-on-surface-variant">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                Efectivo
+              </span>
+              <span className="font-bold text-on-surface tabular-nums">{formatMonto(montoEfectivo)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-on-surface-variant">
+                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                Transferencia
+              </span>
+              <span className="font-bold text-on-surface tabular-nums">{formatMonto(montoTransferencia)}</span>
             </div>
           </div>
         </div>

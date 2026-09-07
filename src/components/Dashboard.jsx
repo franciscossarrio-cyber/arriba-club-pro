@@ -61,11 +61,12 @@ const Dashboard = ({
             'Beach Volley': 'from-blue-500 to-blue-600',
             'Funcional': 'from-tertiary to-tertiary-container'
           };
+          const gradiente = colors[d] || 'from-slate-500 to-slate-700';
           return (
             <button
               key={d}
               onClick={() => setDisciplinaActiva(d)}
-              className={`p-5 rounded-2xl transition-all ${disciplinaActiva === d ? `bg-gradient-to-br ${colors[d]} text-white shadow-lg` : 'bg-surface-container-lowest hover:shadow-md'}`}
+              className={`p-5 rounded-2xl transition-all ${disciplinaActiva === d ? `bg-gradient-to-br ${gradiente} text-white shadow-lg` : 'bg-surface-container-lowest hover:shadow-md'}`}
             >
               <p className={`text-2xl font-black ${disciplinaActiva === d ? 'text-white' : 'text-on-surface'}`}>{count}</p>
               <p className={`text-xs font-medium ${disciplinaActiva === d ? 'text-white/80' : 'text-on-surface-variant'}`}>{d}</p>

@@ -18,6 +18,8 @@ import { useFirestore } from './hooks/useFirestore';
 import {
   DISCIPLINAS,
   DISC_COLORS,
+  DISCIPLINAS_GIMNASIO,
+  DISCIPLINAS_SIN_CUPO,
   HORARIOS,
   MESES,
   PRECIOS_DEFAULT,
@@ -101,6 +103,7 @@ function App() {
     removeAsistencia,
     setClaseProfesorId,
     addProfesor,
+    updateProfesor,
     deleteProfesor,
     repetirTurno,
     actualizarSerie,
@@ -366,21 +369,59 @@ function App() {
       });
     });
 
-    const pagosProfes = profesores.filter(p => p.estado === 'Activo').map(profe => {
-      const clasesDadas = clasesContadas[profe.id] || 0;
-      const porcentaje = totalClases > 0 ? clasesDadas / totalClases : 0;
-      return {
-        ...profe,
-        clasesDadas,
-        porcentaje: Math.round(porcentaje * 100),
-        pago: Math.round(totalParaProfes * porcentaje)
-      };
-    });
+    const pagosProfes = profesores
+      .filter(p => p.estado === 'Activo')
+      .filter(p => p.disciplina === disciplinaActiva || (!p.disciplina && disciplinaActiva === 'Futvoley'))
+      .map(profe => {
+        const clasesDadas = clasesContadas[profe.id] || 0;
+        const porcentaje = totalClases > 0 ? clasesDadas / totalClases : 0;
+        return {
+          ...profe,
+          clasesDadas,
+          porcentaje: Math.round(porcentaje * 100),
+          pago: Math.round(totalParaProfes * porcentaje)
+        };
+      });
 
     return { totalCobrado, totalParaProfes, totalClases, pagosProfes };
   };
 
   const datosProfes = calcularPagoProfesores();
+
+  // Ocupación mensual de los slots de Futvoley — solo clases clásicas
+  // (excluye clases privadas y day use). Un alumno "ocupa" el cupo cuando
+  // vino a la clase, haya pagado o no (estados 'asistio' y 'vino_no_pago').
+  //
+  // Cada doc de `ocupacion` (colección `clases`) es un slot físico real
+  // (cupo 8): "Llenar mes" y la creación manual desde la grilla de canchas
+  // guardan tipo: 'clasica' (valor ya normalizado); 'membresia'/'suelta' son
+  // valores legacy equivalentes. Se excluyen 'privada', 'dayuse'/'day_use' y
+  // 'prueba'.
+  const calcularOcupacionFutvoley = () => {
+    const CUPO_MAX = 8;
+    const esClasica = tipo => {
+      const t = tipo || 'clasica';
+      return t === 'clasica' || t === 'membresia' || t === 'suelta';
+    };
+
+    const slots = ocupacion.filter(s => s.disciplina === 'Futvoley' && esClasica(s.tipo));
+
+    let cuposOcupados = 0;
+    slots.forEach(slot => {
+      const clave = `${slot.fecha}|${slot.horario}`;
+      cuposOcupados += (slot.alumnos || []).filter(id => {
+        const estado = asistencias[id]?.[clave];
+        return estado === 'asistio' || estado === 'vino_no_pago';
+      }).length;
+    });
+
+    const cuposTotales = slots.length * CUPO_MAX;
+    const porcentaje = cuposTotales > 0 ? Math.round((cuposOcupados / cuposTotales) * 100) : 0;
+
+    return { slots: slots.length, cuposOcupados, cuposTotales, porcentaje };
+  };
+
+  const datosOcupacionFutvoley = calcularOcupacionFutvoley();
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -439,6 +480,18 @@ function App() {
       await cargarDatos(true);
     } catch (err) {
       setError('Error al guardar profesor');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleEditarProfe = async (profeId, data) => {
+    setSyncing(true);
+    try {
+      await updateProfesor(profeId, { nombre: data.nombre, cbu: data.cbu, disciplina: data.disciplina || '' });
+      await cargarDatos(true);
+    } catch (err) {
+      setError('Error al editar profesor');
     } finally {
       setSyncing(false);
     }
@@ -1126,7 +1179,7 @@ function App() {
         });
       });
 
-      const ordenCanchas = disciplinaActiva === 'Funcional'
+      const ordenCanchas = DISCIPLINAS_GIMNASIO.includes(disciplinaActiva)
         ? ['gimnasio']
         : ['cancha1', 'cancha2', 'cancha3'];
       const profesorDefault = disciplinaActiva === 'Futvoley'
@@ -1145,6 +1198,7 @@ function App() {
         return new Date(anio, mm - 1, dd).getDay() === dia;
       });
 
+      const cupoPorSlot = DISCIPLINAS_SIN_CUPO.includes(disciplinaActiva) ? Infinity : 8;
       const trabajos = [];
       let sinCupo = 0;
       Object.entries(grupos).forEach(([key, alumnoIds]) => {
@@ -1152,7 +1206,7 @@ function App() {
         const dia = Number(diaStr);
         const canchasLibres = ordenCanchas.filter(c => canchaLibre(c, horario, dia));
         const chunks = [];
-        for (let i = 0; i < alumnoIds.length; i += 8) chunks.push(alumnoIds.slice(i, i + 8));
+        for (let i = 0; i < alumnoIds.length; i += cupoPorSlot) chunks.push(alumnoIds.slice(i, i + cupoPorSlot));
         chunks.forEach((chunk, i) => {
           const canchaId = canchasLibres[i];
           if (!canchaId) { sinCupo += chunk.length; return; }
@@ -1716,7 +1770,9 @@ function App() {
               profesores={profesores}
               clasesPorProfe={clasesPorProfe}
               datosProfes={datosProfes}
+              datosOcupacionFutvoley={datosOcupacionFutvoley}
               onGuardarProfe={handleGuardarProfe}
+              onEditarProfe={handleEditarProfe}
               onEliminarProfe={handleEliminarProfe}
               onAsignarClase={handleAsignarClase}
               syncing={syncing}

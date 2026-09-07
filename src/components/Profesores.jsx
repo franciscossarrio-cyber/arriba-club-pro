@@ -9,18 +9,40 @@ const Profesores = ({
   profesores,
   clasesPorProfe,
   datosProfes,
+  datosOcupacionFutvoley,
   onGuardarProfe,
+  onEditarProfe,
   onEliminarProfe,
   onAsignarClase,
   syncing
 }) => {
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [profeEditando, setProfeEditando] = useState(null);
   const [nuevoProfe, setNuevoProfe] = useState({ nombre: '', cbu: '', disciplina: '' });
+
+  const abrirNuevo = () => {
+    setProfeEditando(null);
+    setNuevoProfe({ nombre: '', cbu: '', disciplina: '' });
+    setMostrarForm(true);
+  };
+
+  const abrirEdicion = (profe) => {
+    setProfeEditando(profe.id);
+    setNuevoProfe({ nombre: profe.nombre || '', cbu: profe.cbu || '', disciplina: profe.disciplina || '' });
+    setMostrarForm(true);
+  };
+
+  const cerrarForm = () => {
+    setMostrarForm(false);
+    setProfeEditando(null);
+  };
 
   const handleGuardar = () => {
     if (nuevoProfe.nombre) {
-      onGuardarProfe(nuevoProfe);
+      if (profeEditando) onEditarProfe(profeEditando, nuevoProfe);
+      else onGuardarProfe(nuevoProfe);
       setMostrarForm(false);
+      setProfeEditando(null);
       setNuevoProfe({ nombre: '', cbu: '', disciplina: '' });
     }
   };
@@ -33,7 +55,7 @@ const Profesores = ({
           <p className="text-on-surface-variant">{disciplinaActiva} • {mesActual}</p>
         </div>
         <button
-          onClick={() => setMostrarForm(true)}
+          onClick={abrirNuevo}
           className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-white font-bold rounded-full shadow-lg"
         >
           <Icon name="person_add" size={20} />
@@ -41,12 +63,37 @@ const Profesores = ({
         </button>
       </div>
 
-      {/* Payout Summary */}
-      <div className="bg-gradient-to-br from-primary to-primary-container rounded-3xl p-6 text-white">
-        <p className="text-white/70 text-sm font-medium mb-1">Total a Repartir (50%)</p>
-        <p className="text-3xl font-black">{formatMonto(datosProfes.totalParaProfes)}</p>
-        <p className="text-white/70 text-xs mt-2">{datosProfes.totalClases} clases asignadas</p>
-      </div>
+      {/* Ocupación de clases clásicas de Futvoley */}
+      {disciplinaActiva === 'Futvoley' && datosOcupacionFutvoley && (
+        <div className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-on-surface-variant text-sm font-medium">Ocupación de Clases Clásicas</p>
+              <p className="text-xs text-on-surface-variant/70 mt-0.5">Cupo máximo 8 · {mesActual}</p>
+            </div>
+            <Icon name="groups" className="text-primary" size={24} />
+          </div>
+          <div className="flex items-end gap-3 mb-4">
+            <p className={`text-4xl font-black ${
+              datosOcupacionFutvoley.porcentaje >= 80 ? 'text-success' :
+              datosOcupacionFutvoley.porcentaje >= 50 ? 'text-amber-500' :
+              'text-error'
+            }`}>{datosOcupacionFutvoley.porcentaje}%</p>
+            <p className="text-sm text-on-surface-variant mb-1">{datosOcupacionFutvoley.cuposOcupados}/{datosOcupacionFutvoley.cuposTotales} cupos ocupados</p>
+          </div>
+          <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full ${
+                datosOcupacionFutvoley.porcentaje >= 80 ? 'bg-success' :
+                datosOcupacionFutvoley.porcentaje >= 50 ? 'bg-amber-500' :
+                'bg-error'
+              }`}
+              style={{ width: `${Math.min(datosOcupacionFutvoley.porcentaje, 100)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-on-surface-variant/70 mt-3">{datosOcupacionFutvoley.slots} clases dictadas en el mes</p>
+        </div>
+      )}
 
       {/* Professors List */}
       <div className="space-y-4">
@@ -62,12 +109,20 @@ const Profesores = ({
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => onEliminarProfe(profe.id)}
-                className="p-2 hover:bg-error/10 rounded-lg text-error transition-colors"
-              >
-                <Icon name="delete" size={20} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => abrirEdicion(profe)}
+                  className="p-2 hover:bg-primary/10 rounded-lg text-primary transition-colors"
+                >
+                  <Icon name="edit" size={20} />
+                </button>
+                <button
+                  onClick={() => onEliminarProfe(profe.id)}
+                  className="p-2 hover:bg-error/10 rounded-lg text-error transition-colors"
+                >
+                  <Icon name="delete" size={20} />
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-surface-container-low p-3 rounded-xl text-center">
@@ -86,19 +141,23 @@ const Profesores = ({
           </div>
         ))}
         
-        {profesores.length === 0 && (
+        {datosProfes.pagosProfes.length === 0 && (
           <div className="bg-surface-container-lowest rounded-2xl p-8 text-center">
             <Icon name="person_off" className="text-outline mx-auto mb-2" size={40} />
-            <p className="text-on-surface-variant">No hay profesores registrados</p>
+            <p className="text-on-surface-variant">
+              {profesores.length === 0
+                ? 'No hay profesores registrados'
+                : `No hay profesores de ${disciplinaActiva}`}
+            </p>
           </div>
         )}
       </div>
 
-      {/* New Professor Modal */}
+      {/* New/Edit Professor Modal */}
       {mostrarForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarForm(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={cerrarForm}>
           <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-on-surface mb-6">Nuevo Profesor</h3>
+            <h3 className="text-xl font-bold text-on-surface mb-6">{profeEditando ? 'Editar Profesor' : 'Nuevo Profesor'}</h3>
             <div className="space-y-4">
               <input
                 type="text"
@@ -138,7 +197,7 @@ const Profesores = ({
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setMostrarForm(false)} className="flex-1 py-3 bg-surface-container-high rounded-xl font-medium text-on-surface-variant">
+              <button onClick={cerrarForm} className="flex-1 py-3 bg-surface-container-high rounded-xl font-medium text-on-surface-variant">
                 Cancelar
               </button>
               <button onClick={handleGuardar} className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold">

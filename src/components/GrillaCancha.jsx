@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import Icon from './Icon';
-import { DISCIPLINAS, DISC_COLORS, MESES } from '../utils/helpers';
+import { DISCIPLINAS, DISC_COLORS, MESES, DISCIPLINAS_SIN_CUPO } from '../utils/helpers';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
   const efectivos   = ids.length - cancelados;
   const badge   = BADGE[tipo] || BADGE.clasica;
   const profe   = slot?.profesorId ? profesoresMap[slot.profesorId] : null;
+  const sinCupo = DISCIPLINAS_SIN_CUPO.includes(slot?.disciplina);
 
   // ── Mini (panorama día) ───────────────────────────────────────────────────
   if (mini) {
@@ -156,7 +157,7 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
           {ids.length > 3 && <span className="text-[7px] text-slate-400 font-bold">+{ids.length - 3}</span>}
         </div>
         <span className="text-[8px] font-bold tabular-nums text-slate-400 shrink-0">
-          {ids.length}<span className="text-slate-300">/{tipo === 'dayuse' ? '∞' : 8}</span>
+          {ids.length}<span className="text-slate-300">/{tipo === 'dayuse' || sinCupo ? '∞' : 8}</span>
         </span>
       </button>
     );
@@ -248,9 +249,9 @@ const SlotCell = ({ slot, alumnosMap, asistencias, fecha, horario, onClick, comp
           )}
         </div>
         <span className={`text-[10px] font-bold tabular-nums ${
-          efectivos >= 8 ? 'text-red-500' : confirmados >= 4 ? 'text-amber-500' : 'text-slate-400'
+          !sinCupo && efectivos >= 8 ? 'text-red-500' : confirmados >= 4 ? 'text-amber-500' : 'text-slate-400'
         }`}>
-          {tipo === 'dayuse' ? `${ids.length} inscrip.` : `${confirmados}/${8} Slots`}
+          {tipo === 'dayuse' || sinCupo ? `${ids.length} inscrip.` : `${confirmados}/${8} Slots`}
         </span>
       </div>
     </button>
@@ -392,7 +393,8 @@ const EditModal = ({
 
   const canchaLabel = CANCHAS.find(c => c.id === canchaId)?.label || canchaId;
   const tipoCfg     = TIPO_CONFIG[tipo] || TIPO_CONFIG.clasica;
-  const cupoFull    = tipo !== 'dayuse' && efectivos >= 8;
+  const sinCupo     = DISCIPLINAS_SIN_CUPO.includes(disciplina);
+  const cupoFull    = tipo !== 'dayuse' && !sinCupo && efectivos >= 8;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
@@ -419,7 +421,7 @@ const EditModal = ({
           </div>
 
           {/* Barra de cupo */}
-          {tipo !== 'dayuse' && (
+          {tipo !== 'dayuse' && !sinCupo && (
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1.5">
                 <span className="text-slate-400">Cupo ocupado</span>
@@ -465,7 +467,7 @@ const EditModal = ({
           <section>
             <div className="flex items-center justify-between mb-2.5">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Alumnos</p>
-              {tipo === 'dayuse'
+              {tipo === 'dayuse' || sinCupo
                 ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Sin límite</span>
                 : <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${cupoFull ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>{efectivos} / 8</span>
               }
@@ -526,7 +528,7 @@ const EditModal = ({
           </section>
 
           {/* Agregar alumno */}
-          {(tipo === 'dayuse' || efectivos < 8) && (
+          {(tipo === 'dayuse' || sinCupo || efectivos < 8) && (
             <section>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Agregar alumno</p>
               {!tipoConfirmado ? (
