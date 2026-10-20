@@ -151,7 +151,7 @@ const PagoModal = ({ item, onClose, onConfirm, syncing }) => {
 
 // Factura B por servicios (PV de servicios). Con `item` se factura un pago del historial;
 // sin `item` es una factura manual (ej: alquiler de cancha que no está cargado como pago).
-const FacturarModal = ({ item, disciplina, mesActual, ptoVta, onClose, onEmitir }) => {
+const FacturarModal = ({ item, disciplina, mesActual, ptosVta, onClose, onEmitir }) => {
   const descInicial = item
     ? `${item.tipoInfo.label} ${disciplina}${item.tipo === 'membresia' ? ` ${item.pago?.mes || mesActual}` : item.fecha ? ` ${item.fecha}` : ''} - ${item.nombre}`
     : `Alquiler de cancha ${disciplina}`;
@@ -159,6 +159,7 @@ const FacturarModal = ({ item, disciplina, mesActual, ptoVta, onClose, onEmitir 
   const [monto, setMonto] = useState(item ? String(item.monto) : '');
   const [metodo, setMetodo] = useState(item?.metodo || 'Efectivo');
   const [fecha, setFecha] = useState(hoyISO);
+  const [ptoVta, setPtoVta] = useState(ptosVta[0].nro);
   const [loading, setLoading] = useState(false);
 
   const montoNum = parseFloat(monto) || 0;
@@ -193,6 +194,17 @@ const FacturarModal = ({ item, disciplina, mesActual, ptoVta, onClose, onEmitir 
         </div>
 
         <div className="px-6 py-5 space-y-4">
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Punto de venta</p>
+            <div className="grid grid-cols-2 gap-2">
+              {ptosVta.map(pv => (
+                <button key={pv.nro} onClick={() => setPtoVta(pv.nro)}
+                  className={`py-3 rounded-xl text-sm font-bold transition-all ${
+                    ptoVta === pv.nro ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}>{padNro(pv.nro, 4)} · {pv.label}</button>
+              ))}
+            </div>
+          </div>
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Concepto</p>
             <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
@@ -420,6 +432,7 @@ const Pagos = ({
   // ── Facturación de servicios (PV propio, separado del Shop) ──────────────────
   const [facturasServicio, setFacturasServicio] = useState([]);
   const [ptoVtaServicios, setPtoVtaServicios] = useState(PTO_VTA_SERVICIOS_DEFAULT);
+  const [ptoVtaShop, setPtoVtaShop] = useState(null);
   const [facturarItem, setFacturarItem] = useState(null); // item del historial, o 'manual'
   const [reintentandoId, setReintentandoId] = useState(null);
 
@@ -428,6 +441,7 @@ const Pagos = ({
       const [facts, cfg] = await Promise.all([getFacturas(), getConfigArca()]);
       setFacturasServicio(facts.filter(f => f.origen === 'servicios'));
       if (cfg?.ptoVtaServicios) setPtoVtaServicios(cfg.ptoVtaServicios);
+      if (cfg?.ptoVta) setPtoVtaShop(cfg.ptoVta);
     } catch (err) {
       console.error('Error cargando facturas:', err);
     }
@@ -1063,7 +1077,10 @@ const Pagos = ({
           item={facturarItem === 'manual' ? null : facturarItem}
           disciplina={disciplinaActiva}
           mesActual={mesActual}
-          ptoVta={ptoVtaServicios}
+          ptosVta={[
+            { nro: ptoVtaServicios, label: 'Servicios' },
+            ...(ptoVtaShop && ptoVtaShop !== ptoVtaServicios ? [{ nro: ptoVtaShop, label: 'Shop' }] : []),
+          ]}
           onClose={() => setFacturarItem(null)}
           onEmitir={emitirFacturaServicio}
         />
