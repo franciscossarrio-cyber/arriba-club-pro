@@ -1,6 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import Icon from './Icon';
 import { formatMonto, getWhatsAppLink, HORARIOS } from '../utils/helpers';
+import { functions } from '../firebase/config';
+import { getFacturas, addFactura, getConfigArca } from '../firebase/firestore';
+import { generarFacturaPDF } from '../utils/facturasPDF';
+import {
+  PTO_VTA_SERVICIOS_DEFAULT, buildFacturaServicio, periodoServicio, hoyISO, isoToDisplay,
+} from '../utils/arca';
+
+const fnEmitirFactura = httpsCallable(functions, 'emitirFactura');
+const padNro = (n, len) => String(n ?? 0).padStart(len, '0');
+const nroFactura = (f) => `${padNro(f.arcaPayload?.PtoVta, 4)}-${padNro(f.nroComprobante, 8)}`;
 
 const TIPOS_PAGO = [
   { id: 'suelta',    label: 'Clase Suelta',    color: 'text-amber-600',  dot: 'bg-amber-500' },
@@ -131,6 +142,97 @@ const PagoModal = ({ item, onClose, onConfirm, syncing }) => {
           <button onClick={confirmar} disabled={!valido || loading || syncing}
             className="py-3 rounded-xl text-sm font-bold bg-success text-white disabled:opacity-50 transition-colors">
             {loading ? '...' : esParcial ? 'Registrar parcial' : 'Confirmar pago'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Factura B por servicios (PV de servicios). Con `item` se factura un pago del historial;
+// sin `item` es una factura manual (ej: alquiler de cancha que no está cargado como pago).
+const FacturarModal = ({ item, disciplina, mesActual, ptoVta, onClose, onEmitir }) => {
+  const descInicial = item
+    ? `${item.tipoInfo.label} ${disciplina}${item.tipo === 'membresia' ? ` ${item.pago?.mes || mesActual}` : item.fecha ? ` ${item.fecha}` : ''} - ${item.nombre}`
+    : `Alquiler de cancha ${disciplina}`;
+  const [descripcion, setDescripcion] = useState(descInicial);
+  const [monto, setMonto] = useState(item ? String(item.monto) : '');
+  const [metodo, setMetodo] = useState(item?.metodo || 'Efectivo');
+  const [fecha, setFecha] = useState(hoyISO);
+  const [loading, setLoading] = useState(false);
+
+  const montoNum = parseFloat(monto) || 0;
+  const valido = montoNum > 0 && descripcion.trim() && fecha;
+  const periodo = item ? periodoServicio(item.pago, fecha) : { desde: fecha, hasta: fecha };
+
+  const emitir = async () => {
+    if (!valido) return;
+    setLoading(true);
+    try {
+      await onEmitir(buildFacturaServicio({
+        descripcion: descripcion.trim(), total: montoNum, metodo, fechaISO: fecha,
+        desdeISO: periodo.desde, hastaISO: periodo.hasta, ptoVta, pagoId: item?.id ?? null,
+      }));
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl fade-in" onClick={e => e.stopPropagation()}>
+        <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-start justify-between">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Factura B · PV {padNro(ptoVta, 4)}</p>
+            <h3 className="text-base font-black text-slate-900 truncate">{item ? item.nombre : 'Facturar servicio'}</h3>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors flex-shrink-0">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Concepto</p>
+            <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Total (IVA incl.)</p>
+              <input type="number" value={monto} onChange={e => setMonto(e.target.value)} disabled={!!item}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-70" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Fecha factura</p>
+              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+          </div>
+          {!item && (
+            <div className="grid grid-cols-2 gap-2">
+              {['Efectivo', 'Transferencia'].map(m => (
+                <button key={m} onClick={() => setMetodo(m)}
+                  className={`py-3 rounded-xl text-sm font-bold transition-all ${
+                    metodo === m ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}>{m}</button>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            Servicio del {isoToDisplay(periodo.desde)}{periodo.hasta !== periodo.desde ? ` al ${isoToDisplay(periodo.hasta)}` : ''} · Consumidor Final · IVA 21%
+          </p>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+          <button onClick={onClose}
+            className="py-3 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={emitir} disabled={!valido || loading}
+            className="py-3 rounded-xl text-sm font-bold bg-indigo-600 text-white disabled:opacity-50 transition-colors">
+            {loading ? 'Emitiendo...' : 'Emitir factura'}
           </button>
         </div>
       </div>
@@ -315,6 +417,66 @@ const Pagos = ({
   const [pagoModalItem, setPagoModalItem] = useState(null);
   const [editPagoItem, setEditPagoItem] = useState(null);
 
+  // ── Facturación de servicios (PV propio, separado del Shop) ──────────────────
+  const [facturasServicio, setFacturasServicio] = useState([]);
+  const [ptoVtaServicios, setPtoVtaServicios] = useState(PTO_VTA_SERVICIOS_DEFAULT);
+  const [facturarItem, setFacturarItem] = useState(null); // item del historial, o 'manual'
+  const [reintentandoId, setReintentandoId] = useState(null);
+
+  const cargarFacturas = useCallback(async () => {
+    try {
+      const [facts, cfg] = await Promise.all([getFacturas(), getConfigArca()]);
+      setFacturasServicio(facts.filter(f => f.origen === 'servicios'));
+      if (cfg?.ptoVtaServicios) setPtoVtaServicios(cfg.ptoVtaServicios);
+    } catch (err) {
+      console.error('Error cargando facturas:', err);
+    }
+  }, []);
+
+  useEffect(() => { cargarFacturas(); }, [cargarFacturas]);
+
+  // Factura vigente por pago: la emitida/pendiente más reciente que no fue anulada con NC
+  const facturaPorPago = useMemo(() => {
+    const map = {};
+    facturasServicio.forEach(f => {
+      if (!f.pagoId || f.notaCreditoId || map[f.pagoId]) return;
+      map[f.pagoId] = f;
+    });
+    return map;
+  }, [facturasServicio]);
+
+  const emitirFacturaServicio = async (factura) => {
+    let id;
+    try {
+      id = await addFactura(factura);
+      setFacturasServicio(prev => [{ ...factura, id }, ...prev]);
+      setReintentandoId(id);
+      const res = await fnEmitirFactura({ facturaId: id });
+      const emitida = { ...factura, id, estado: 'enviada', ...res.data };
+      setFacturasServicio(prev => prev.map(f => f.id === id ? emitida : f));
+      generarFacturaPDF(emitida).catch(() => {});
+    } catch (err) {
+      if (id) setFacturasServicio(prev => prev.map(f => f.id === id ? { ...f, estado: 'error', errorMsg: err.message } : f));
+      alert('Error al emitir factura: ' + (err.message ?? 'Error desconocido'));
+    } finally {
+      setReintentandoId(null);
+    }
+  };
+
+  const reintentarFactura = async (factura) => {
+    setReintentandoId(factura.id);
+    try {
+      const res = await fnEmitirFactura({ facturaId: factura.id });
+      const emitida = { ...factura, estado: 'enviada', errorMsg: null, ...res.data };
+      setFacturasServicio(prev => prev.map(f => f.id === factura.id ? emitida : f));
+      generarFacturaPDF(emitida).catch(() => {});
+    } catch (err) {
+      alert('Error ARCA: ' + err.message);
+    } finally {
+      setReintentandoId(null);
+    }
+  };
+
   const pagarUnidad = async (pago, metodo, montoOverride) => {
     if (pago.virtual) await onPagarSueltaVirtual(pago, metodo, montoOverride);
     else              await onMarcarPagado(pago.id, metodo, montoOverride);
@@ -488,7 +650,7 @@ const Pagos = ({
     const tipoInfo = TIPOS_PAGO.find(t => t.id === tipoNorm) || TIPOS_PAGO[TIPOS_PAGO.length - 1];
     return {
       id: p.id || i, nombre: al?.nombre || p.nombre || 'Alumno', tipo: tipoNorm, tipoInfo,
-      monto: p.monto, metodo: p.metodo || 'Efectivo', fecha: p.fecha,
+      monto: p.monto, metodo: p.metodo || 'Efectivo', fecha: p.fecha, pago: p,
     };
   }), [pagosPagados, alumnos]);
 
@@ -818,6 +980,14 @@ const Pagos = ({
               <Icon name="check_circle" className="text-success" size={20} />
               <h3 className="font-bold text-on-surface">Pagos registrados</h3>
               <span className="text-sm text-on-surface-variant">({historialFiltrado.length})</span>
+              <button
+                onClick={() => setFacturarItem('manual')}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                title="Factura de un servicio que no está cargado como pago (ej: alquiler de cancha)"
+              >
+                <Icon name="receipt_long" size={14} />
+                Facturar servicio
+              </button>
             </div>
             {historialFiltrado.length === 0 ? (
               <div className="px-5 py-14 text-center text-on-surface-variant text-sm">
@@ -836,6 +1006,30 @@ const Pagos = ({
                       </p>
                     </div>
                     <p className={`font-bold text-sm flex-shrink-0 ${item.tipoInfo.color}`}>{formatMonto(item.monto)}</p>
+                    {(() => {
+                      const f = facturaPorPago[item.id];
+                      if (!f) return (
+                        <button onClick={() => setFacturarItem(item)}
+                          className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors flex-shrink-0">
+                          Facturar
+                        </button>
+                      );
+                      if (f.estado === 'enviada') return (
+                        <button onClick={() => generarFacturaPDF(f)} title="Descargar PDF"
+                          className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-success/10 text-success hover:bg-success/20 transition-colors flex-shrink-0">
+                          B {nroFactura(f)}
+                        </button>
+                      );
+                      if (reintentandoId === f.id) return (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 flex-shrink-0">Emitiendo...</span>
+                      );
+                      return (
+                        <button onClick={() => reintentarFactura(f)} title={f.errorMsg || 'Factura sin CAE'}
+                          className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-error/10 text-error hover:bg-error/20 transition-colors flex-shrink-0">
+                          Reintentar
+                        </button>
+                      );
+                    })()}
                     <button
                       onClick={() => setEditPagoItem(item)}
                       className="w-8 h-8 flex items-center justify-center rounded-full text-slate-300 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
@@ -861,6 +1055,17 @@ const Pagos = ({
             await pagarItemMonto(pagoModalItem, montoNum, metodo);
             setPagoModalItem(null);
           }}
+        />
+      )}
+
+      {facturarItem && (
+        <FacturarModal
+          item={facturarItem === 'manual' ? null : facturarItem}
+          disciplina={disciplinaActiva}
+          mesActual={mesActual}
+          ptoVta={ptoVtaServicios}
+          onClose={() => setFacturarItem(null)}
+          onEmitir={emitirFacturaServicio}
         />
       )}
 

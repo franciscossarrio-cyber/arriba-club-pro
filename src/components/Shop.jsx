@@ -4,6 +4,7 @@ import Icon from './Icon';
 import { formatMonto } from '../utils/helpers';
 import { functions } from '../firebase/config';
 import { generarFacturaPDF, imprimirRecibo80mm } from '../utils/facturasPDF';
+import { PTO_VTA_SERVICIOS_DEFAULT } from '../utils/arca';
 import {
   getProductos, addProducto, updateProducto, deleteProducto,
   getFacturas, addFactura,
@@ -73,7 +74,7 @@ const Shop = () => {
   const [fechaNC,     setFechaNC]     = useState(hoy);
 
   // Config ARCA
-  const [arcaForm,     setArcaForm]     = useState({ cuit: '', ptoVta: 1, cert: '', key: '' });
+  const [arcaForm,     setArcaForm]     = useState({ cuit: '', ptoVta: 1, ptoVtaServicios: PTO_VTA_SERVICIOS_DEFAULT, cert: '', key: '' });
   const [arcaSaved,    setArcaSaved]    = useState(false);
   const [arcaSaving,   setArcaSaving]   = useState(false);
   const [csrGenerando, setCsrGenerando] = useState(false);
@@ -304,7 +305,8 @@ const Shop = () => {
   const { neto, ivaTotal, total } = calcTotales();
 
   // ── Totales cobrados por método (para control de caja) ─────────────────────
-  const facturasCobradas   = facturas.filter(f => f.tipo !== 'nota_credito' && f.estado === 'enviada');
+  // Las facturas de servicios (membresías, clases, alquileres) se cobran en Pagos: no entran en la caja del Shop
+  const facturasCobradas   = facturas.filter(f => f.tipo !== 'nota_credito' && f.estado === 'enviada' && f.origen !== 'servicios');
   const montoEfectivoShop  = facturasCobradas.filter(f => (f.metodo || 'Efectivo') === 'Efectivo').reduce((s, f) => s + f.total, 0);
   const montoTransferShop  = facturasCobradas.filter(f => f.metodo === 'Transferencia').reduce((s, f) => s + f.total, 0);
 
@@ -558,10 +560,13 @@ const Shop = () => {
                         {(f.metodo || 'Efectivo') === 'Transferencia' ? 'Transf. / QR' : 'Efectivo'}
                       </span>
                     )}
+                    {f.origen === 'servicios' && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-700">Servicios</span>
+                    )}
                   </div>
                   <div className="text-xs text-on-surface-variant mt-0.5">
                     {f.fecha}
-                    {f.nroComprobante ? ` · Nro ${String(f.nroComprobante).padStart(8, '0')}` : ''}
+                    {f.nroComprobante ? ` · Nro ${String(f.arcaPayload?.PtoVta ?? '').padStart(4, '0')}-${String(f.nroComprobante).padStart(8, '0')}` : ''}
                     {' · '}{f.items?.length ?? 0} ítem{(f.items?.length ?? 0) !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -711,7 +716,7 @@ const Shop = () => {
         <div className="space-y-4 max-w-xl">
           <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="font-bold text-on-surface">Credenciales ARCA</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-bold uppercase text-outline mb-1 block">CUIT Emisor</label>
                 <input type="text" value={arcaForm.cuit}
@@ -721,9 +726,16 @@ const Shop = () => {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold uppercase text-outline mb-1 block">Punto de Venta</label>
+                <label className="text-xs font-bold uppercase text-outline mb-1 block">PV Shop</label>
                 <input type="number" value={arcaForm.ptoVta} min={1}
                   onChange={e => setArcaForm(f => ({ ...f, ptoVta: parseInt(e.target.value) || 1 }))}
+                  className="w-full px-3 py-2 bg-surface-container border-2 border-transparent rounded-xl focus:border-primary outline-none text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-outline mb-1 block" title="Membresías, clases y alquileres (se factura desde Pagos)">PV Servicios</label>
+                <input type="number" value={arcaForm.ptoVtaServicios} min={1}
+                  onChange={e => setArcaForm(f => ({ ...f, ptoVtaServicios: parseInt(e.target.value) || PTO_VTA_SERVICIOS_DEFAULT }))}
                   className="w-full px-3 py-2 bg-surface-container border-2 border-transparent rounded-xl focus:border-primary outline-none text-sm"
                 />
               </div>

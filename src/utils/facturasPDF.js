@@ -111,6 +111,15 @@ export async function generarFacturaPDF(factura) {
   );
   doc.text(`Cond. IVA: Consumidor Final`, W - m, y, { align: 'right' });
 
+  // ── Período facturado (solo servicios) ────────────────────────────────────
+  const p = factura.arcaPayload;
+  if (p?.Concepto && p.Concepto !== 1 && p.FchServDesde) {
+    const fmt = (f) => `${f.slice(6, 8)}/${f.slice(4, 6)}/${f.slice(0, 4)}`;
+    y += 5;
+    doc.text(`Período facturado: ${fmt(p.FchServDesde)} al ${fmt(p.FchServHasta)}`, m, y);
+    doc.text(`Vto. pago: ${fmt(p.FchVtoPago)}`, W - m, y, { align: 'right' });
+  }
+
   // ── Línea separadora ──────────────────────────────────────────────────────
   y += 6;
   doc.line(m, y, W - m, y);

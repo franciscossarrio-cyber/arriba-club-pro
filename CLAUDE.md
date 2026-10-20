@@ -41,6 +41,8 @@ src/
 | `ocupacion_cancha` | `{canchaId}-{fecha_}_-{horario}` | canchaId, fecha "dd/mm", horario, mes, disciplina, alumnos[], tipo |
 | `profesores` | auto | nombre, cbu, estado |
 | `clases_profe` | `{disciplina}-{fecha_}_-{horario}` | disciplina, fecha, horario, profesorId, mes |
+| `facturas` | auto | origen ('servicios' o vacío=Shop), pagoId, fecha, items[], total, metodo, arcaPayload, estado, cae, nroComprobante |
+| `config/arca` | `arca` | cuit, cert, key, ptoVta (Shop), ptoVtaServicios (default 4), production |
 
 **Importante:** las `/` en fechas se reemplazan con `_` en los IDs de Firestore (ej: `cancha3-15_03-18:00`).
 
@@ -62,6 +64,11 @@ src/
 ## Tipos de pago
 - **Membresía**: mensual, auto-llena slots en cancha3 según `diasElegidos` del alumno
 - **Clase Suelta**: clase individual, agrega al alumno a un slot específico via `agregarAlumnoASlot`
+
+## Facturación ARCA (dos puntos de venta)
+- **Shop** (comida/bebida/productos): PV `config/arca.ptoVta`, Concepto 1 (Productos)
+- **Servicios** (membresías, clases, day use, alquileres): PV 00004, `config/arca.ptoVtaServicios`, Concepto 2 (Servicios, con FchServDesde/Hasta). Se factura desde el historial de Pagos (`utils/arca.js`), vinculado al pago por `pagoId`
+- Ambos: Factura B a Consumidor Final, emitidas por la Cloud Function `emitirFactura`
 
 ## Planes y precios (referencia)
 - Arena Basic 1x/sem: $50.000 | 2x/sem: $95.000
