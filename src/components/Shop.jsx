@@ -16,6 +16,7 @@ const fnEmitirFactura     = httpsCallable(functions, 'emitirFactura');
 const fnEmitirNotaCredito = httpsCallable(functions, 'emitirNotaCredito');
 
 const CATEGORIAS  = ['General', 'Indumentaria', 'Equipamiento', 'Bebidas', 'Suplementos', 'Servicios', 'Otro'];
+const CATEGORIAS_SERVICIO = ['Servicios', 'Otro'];
 const IVA_OPCIONES = [0, 10.5, 21, 27];
 const ivaIdMap = (pct) => ({ 0: 3, 10.5: 4, 21: 5, 27: 6 }[pct] ?? 5);
 
@@ -55,6 +56,7 @@ const Shop = () => {
   const [cobrando,     setCobrando]     = useState(false);
   const [fechaFactura, setFechaFactura] = useState(hoy);
   const [metodoPago,   setMetodoPago]   = useState('Efectivo');
+  const [ptoVtaElegido, setPtoVtaElegido] = useState(null); // null = automático según categorías del carrito
 
   // Producto form
   const [showForm,      setShowForm]    = useState(false);
@@ -102,7 +104,7 @@ const Shop = () => {
     setItems(prev => {
       const existing = prev.find(i => i.productoId === producto.id);
       if (existing) return prev.filter(i => i.productoId !== producto.id);
-      return [...prev, { productoId: producto.id, nombre: producto.nombre, precio: producto.precio, iva: producto.iva ?? 21, cantidad: 1 }];
+      return [...prev, { productoId: producto.id, nombre: producto.nombre, categoria: producto.categoria, precio: producto.precio, iva: producto.iva ?? 21, cantidad: 1 }];
     });
   };
 
@@ -110,6 +112,10 @@ const Shop = () => {
     if (cantidad <= 0) setItems(prev => prev.filter(i => i.productoId !== productoId));
     else setItems(prev => prev.map(i => i.productoId === productoId ? { ...i, cantidad } : i));
   };
+
+  // Membresías y "otros" van por defecto al PV de servicios; el resto al PV del Shop
+  const pvAutomatico = items.some(i => CATEGORIAS_SERVICIO.includes(i.categoria)) ? arcaForm.ptoVtaServicios : arcaForm.ptoVta;
+  const ptoVtaCobro  = ptoVtaElegido ?? pvAutomatico;
 
   const calcTotales = (itemList = items) => {
     let neto = 0, ivaTotal = 0;
@@ -134,10 +140,14 @@ const Shop = () => {
       ivaMap[iva].BaseImp += n;
       ivaMap[iva].Importe += sub - n;
     });
+    // En el PV de servicios se factura como Servicios (Concepto 2), con el período = día de la factura
+    const esServicio = ptoVta === arcaForm.ptoVtaServicios && ptoVta !== arcaForm.ptoVta;
+    const fchArca    = fecha.replace(/-/g, '');
     return {
       PtoVta:     ptoVta || 1,
       CbteTipo:   6,
-      Concepto:   1,
+      Concepto:   esServicio ? 2 : 1,
+      ...(esServicio && { FchServDesde: fchArca, FchServHasta: fchArca, FchVtoPago: fchArca }),
       DocTipo:    99,
       DocNro:     0,
       CbteFch:    fecha.replace(/-/g, ''),
@@ -169,13 +179,14 @@ const Shop = () => {
         ivaTotal:    totales.ivaTotal,
         total:       totales.total,
         metodo:      metodoPago,
-        arcaPayload: buildArcaPayload(totales, snapshot, arcaForm.ptoVta, fechaFactura),
+        arcaPayload: buildArcaPayload(totales, snapshot, ptoVtaCobro, fechaFactura),
         estado:      'borrador',
       };
       const id = await addFactura(factura);
       setItems([]);
       setFechaFactura(hoy());
       setMetodoPago('Efectivo');
+      setPtoVtaElegido(null);
 
       const res = await fnEmitirFactura({ facturaId: id });
       const { cae, caeFchVto, nroComprobante } = res.data;
@@ -441,8 +452,25 @@ const Shop = () => {
                       ))}
                     </div>
                   </div>
+                  {arcaForm.ptoVtaServicios !== arcaForm.ptoVta && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-bold text-on-surface-variant whitespace-nowrap">PV</label>
+                      <div className="flex-1 flex bg-surface-container rounded-xl p-1 gap-1">
+                        {[
+                          { nro: arcaForm.ptoVta,           label: 'Shop' },
+                          { nro: arcaForm.ptoVtaServicios, label: 'Servicios' },
+                        ].map(pv => (
+                          <button key={pv.nro} type="button" onClick={() => setPtoVtaElegido(pv.nro)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                              ptoVtaCobro === pv.nro ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'
+                            }`}
+                          >{String(pv.nro).padStart(4, '0')} · {pv.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-1">
-                    <button onClick={() => setItems([])}
+                    <button onClick={() => { setItems([]); setPtoVtaElegido(null); }}
                       className="p-3 rounded-xl border-2 border-outline/20 hover:bg-surface-container transition-colors"
                     >
                       <Icon name="delete_sweep" size={20} className="text-on-surface-variant" />
